@@ -1,2 +1,2 @@
-# VIDERA
-Variant Identification &amp; Evidence Retrieval Assistant
+# VaDER
+Variant-Disease Evidence Retriever
