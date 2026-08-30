@@ -1,0 +1,18 @@
+{
+  "query": "(BRCA1[Title/Abstract] OR BRCA2[Title/Abstract] OR TP53[Title/Abstract] OR PALB2[Title/Abstract] OR ATM[Title/Abstract] OR CHEK2[Title/Abstract] OR \"DNA damage response\"[Title/Abstract] OR \"PARP inhibitor\"[Title/Abstract] OR \"homologous recombination deficiency\"[Title/Abstract]) AND (\"Mutation\"[MeSH] OR \"Genetic Variation\"[MeSH] OR variant[Title/Abstract]) AND \"Neoplasms\"[MeSH] AND medline[sb] AND \"open access\"[filter]",
+  "target_n": 10000,
+  "sampling": "uniform_random",
+  "seed": 0,
+  "id_fetch_cap": 300000,
+  "esearch_total_available": 7889,
+  "esearch_ids_fetched": 7889,
+  "esearch_ids_truncated": false,
+  "pmcids_sampled": 7889,
+  "ok": 7863,
+  "skipped": 26,
+  "error": 0,
+  "snapshot_started_utc": "2026-08-30T04:02:06.733266+00:00",
+  "snapshot_finished_utc": "2026-08-30T04:06:36.892465+00:00",
+  "s3_bucket": "pmc-oa-opendata",
+  "script_sha256_prefix": "fecef88fe335"
+}

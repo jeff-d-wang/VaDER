@@ -1,0 +1,24 @@
+# Planning docs and local agent instructions. Kept out of the repo on
+# purpose: they carry candid strategy and job-search framing. They are still
+# the working knowledge base, just not version-controlled here.
+docs/
+CLAUDE.md
+
+# Corpus full text. Hundreds of MB of PMC OA JATS XML, regenerable from
+# corpus/manifest.csv + corpus/run_info.json + ingestion/pull_corpus.py.
+# manifest.csv carries a per-file sha256, so any re-fetch is byte-verifiable
+# without the blobs living in git. corpus/manifest.csv and corpus/run_info.json
+# are NOT ignored: they are the reproducibility record and must be committed.
+corpus/xml/
+ingestion/corpus/xml/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# OS
+.DS_Store
