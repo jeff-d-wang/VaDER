@@ -9,7 +9,7 @@ but to understand the practice around it too: evaluation methodology, error anal
 
 ## Status
 
-**Step 0, in progress.** Task contract: variant-disease evidence retrieval, scoped to cancer genomics (see `docs/TASK_CONTRACT.md`). The corpus is pulled: 7,863 PMC Open Access full-text articles, cancer-genomics variant-disease net, snapshot 2026-08-30 (see `docs/DECISION_LOG.md`). Next is the FastAPI serving layer, then a full end-to-end run of the existing v1.
+**Step 0, nearly done.** Task contract: variant-disease evidence retrieval, scoped to cancer genomics (see `docs/TASK_CONTRACT.md`). The corpus is pulled: 7,863 PMC Open Access full-text articles, cancer-genomics variant-disease net, snapshot 2026-08-30. A FastAPI service is up and measured (`service/`), wrapping a deliberately trivial stub handler since v1 turned out not to exist in this repo; see `docs/DECISION_LOG.md` for both calls. What remains before Tier 1: decide whether to locate v1 or drop it, then start the eval harness (M1).
 
 ## Why this exists
 
@@ -20,4 +20,5 @@ I want to do a production-esque AI engineering project that covers issues outsid
 ```
 docs/         Project plan, decisions, results, and reference material
 ingestion/    Corpus pull: PMC Open Access full text via E-utilities and S3
+service/      Step 0c: FastAPI measurement surface (stub handler, see docs/DECISION_LOG.md)
 ```

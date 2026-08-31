@@ -12,6 +12,13 @@ CLAUDE.md
 corpus/xml/
 ingestion/corpus/xml/
 
+# Step 0c service: per-request logs and load-test summaries are regenerated
+# by every run and would silently overwrite each other under git, the exact
+# anti-pattern RESULTS.md's append-only rule exists to avoid. The durable
+# record of a load test is the RESULTS.md row, not these files.
+service/logs/
+service/loadtest_result*.json
+
 # Python
 __pycache__/
 *.pyc
