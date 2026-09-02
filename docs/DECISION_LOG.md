@@ -487,3 +487,175 @@ They're here to show the shape, not to stay as clutter.
   protein-level HGVS and rsID forms `eval/README.md` recommends. Treat "verified complete" as
   "verified complete against the notations searched," not an absolute guarantee, until a wider
   notation sweep is run.
+
+---
+
+## Design decision: Gold-span verification found guessed offsets; re-derived from source
+
+- **Date / module:** M1, `eval/` (2026-09-01).
+- **What happened:** before building the scorer, checked whether the 4 disagreement cases' 9
+  `gold_spans` actually pointed at the quoted text their `disagreement_note` claims. They didn't,
+  reliably: round-number offsets (`0:305`, `950:1450`, `2500:3200`) are a guess's signature, and
+  extracting the real text at those offsets confirmed it, several spans landed on the wrong
+  paragraph, on-topic but not the sentence actually being cited.
+- **Decision:** wrote `eval/corpus_text.py` (shared section-text extraction, joining paragraphs
+  the same way `service/search.py`'s offset bookkeeping already assumes, so gold spans and a real
+  system's spans are offset-compatible) and `eval/verify_spans.py`: for every span whose
+  `disagreement_note` contains an attributable quote (whole quote, falling back to its individual
+  sentences, whitespace/curly-quote tolerant), search the article's real text and rewrite
+  `char_start`/`char_end` to the quote's actual location, widened to the containing paragraph. Ran
+  it: 5 of 9 spans fixed this way (2 more turned out already correct). The remaining 4 had no
+  literal quote to search for (the note only paraphrased them); those were checked and corrected by
+  hand, same standard (a distinctive phrase or number from the note, located in the real abstract,
+  widened to the paragraph), not left as guesses. All 9 spans now verifiably support their claim.
+- **A real finding, not just a bug:** one quote failed exact matching because the note ended a
+  sentence with a period where the source had a comma and kept going (PMC137944). The claim's
+  substance was right, the "exact quote" wasn't byte-exact. `verify_spans.py`'s sentence-level
+  fallback exists because of this: a quote that fails whole often still matches sentence by
+  sentence, catching this class of drift without discarding an otherwise-good citation.
+- **Reasoning:** a scorer graded against wrong gold spans would silently teach the wrong lesson,
+  a "grounded" answer citing the actual supporting paragraph could score as ungrounded against a
+  guessed span two paragraphs away, and vice versa. Cheap to fix now, before any answer has been
+  scored against these cases; expensive to discover after M3 retrieval numbers already depend on
+  them.
+- **Reversibility:** Free going forward (`eval/test_verify_spans.py` regression-tests the matching
+  logic). The specific 9 spans are corrected in `eval/answer_cases.jsonl`; re-running
+  `verify_spans.py` on any future case with a quoted note is the same cost as this run.
+
+---
+
+## Design decision: M1 scorer architecture, judge choice, and the no-retrieval baseline
+
+- **Date / module:** M1, `eval/` (2026-09-01). Implements the rubric from "Answer-set scoring
+  rubric" above; this entry is the architecture underneath that rubric, not a re-decision of it.
+  Built in the same working session this is logged in, not strictly before, noted here rather than
+  glossed over: the rubric's sub-score definitions were already settled and logged first, what's
+  decided here (schema, judge backend, N/A handling) is implementation that surfaced its own small
+  choices while being written, addressed as they came up rather than staged as a separate
+  pre-approval round.
+- **Decision:**
+  1. **System-answer schema.** A scorer run needs a generated answer to grade, not just a case.
+     Defined one JSON-per-`case_id` shape (`eval/score.py`'s `SystemAnswer`): `direction`,
+     `strength`, `not_found`, `answer_text`, `claims` (list of `{text, cited_pmcid, cited_section,
+     cited_char_start, cited_char_end}`), plus `parameter_value`/`cited_pmcid` for the
+     methods_extraction stratum. Any future generator (a real retriever, an ablation, this
+     baseline) targets this one contract; `score.py` never talks to a live system directly.
+  2. **Judge backend: Groq's free tier**, matching the model already decided in "Model & embedding
+     stack" above (70B-class Llama, `llama-3.3-70b-versatile`), called through
+     `eval/llm_client.py`. A `FakeJudge` (deterministic word-overlap, no network) exists
+     specifically so `score.py`'s own branching logic is unit-tested without an API key or
+     nondeterministic output; it is not a real judge and `eval/test_score.py` says so at the top.
+  3. **Two rubric extensions beyond the confirmed discussion**, both flagged so they're easy to
+     challenge: property 3 (surfaces disagreement) is graded pass/partial/fail here (partial =
+     cites both conflicting sources without stating they conflict), the rubric discussion only
+     fixed this scale for properties 1 and 2. Property 4 (says not-found) is additionally checked
+     in reverse for ordinary evidence cases, did the system wrongly refuse when the corpus does
+     have grounding, marked with `note: "extended_check"` in the output so it's greppable and
+     droppable if that reading turns out to be wrong.
+  4. **No blended per-case score.** `score.py`'s `summarize()` reports each property's pass rate
+     over only the cases where it applied (N/A excluded from the denominator, not counted as a
+     failure), matching the rubric decision's own reasoning against a holistic pass/fail.
+  5. **First baseline: no-retrieval** (`eval/baselines/no_retrieval.py`), per `PROJECT_PLAN.md`
+     M1's three-baseline requirement. Answers each evidence-stratum query from the model's
+     parametric knowledge alone, `claims` always empty (there is no retrieval step to cite), so
+     scoring it is expected to fail groundedness by construction, that failure is the measurement,
+     not a bug. Not yet run: needs `GROQ_API_KEY`, not present in this environment. Code is
+     written and unit-tested against `FakeJudge`; the first real run and its `RESULTS.md` row are
+     the next step once a key is available.
+- **Alternatives considered:**
+  - *Skip the system-answer schema, score a live system directly*: rejected, there is no
+    real system yet (M3 retrieval doesn't exist), and coupling the scorer to one would make it
+    unusable for the free-benchmark harnesses (`eval/benchmarks/`) or any future ablation.
+  - *Binary supported/unsupported for property 3 instead of pass/partial/fail*: rejected for
+    consistency with property 1's granularity and because "cites both sources but never says they
+    conflict" is a real, common, distinct failure mode worth its own bucket, not noise.
+  - *Use the paid Haiku 4.5 budget for the judge now*: rejected, that budget is reserved
+    specifically for the held-out final evaluation and judge-vs-human kappa calibration per the
+    existing model-stack decision; iteration-time judging stays on the free tier.
+- **Reasoning:** every choice here is downstream of decisions already logged (the rubric, the
+  model stack); this entry exists so the *mechanics* connecting them are traceable too, and so the
+  two places this script's authors (not discussed with the user) made a judgment call are visible
+  rather than buried in code.
+- **Reversibility:** Cheap. The schema is a dict shape, not a database; the judge is swapped by one
+  CLI flag; the two rubric extensions are each gated behind a single function and a `note` field,
+  easy to strip out if reviewed and rejected.
+
+---
+
+## Design decision: first 7 ordinary evidence cases, filling a real gap
+
+- **Date / module:** M1, `eval/` (2026-09-02).
+- **What happened:** every case in `answer_cases.jsonl` up to this point was special-cased,
+  disagreement or negative. Nothing tested the plain case (single clear source, no conflict, no
+  absence) that should be the majority of a 50-80 set; scoring or calibrating against a 100%
+  edge-case set would give a distorted picture before any of that special-casing even matters.
+- **Decision:** added 7 cases (`palb2_breast_risk_ord_001`, `chek2_prostate_risk_ord_001`,
+  `tp53_chondrosarcoma_survival_ord_001`, `brca_prs_ovarian_risk_ord_001`,
+  `brca2_pancreatic_risk_ord_001`, `tp53_her2_breast_ord_001`, `atm_at_lymphoid_tumor_ord_001`),
+  `gold.has_disagreement: false`, `gold.expected_not_found: false`. Built directly (not delegated),
+  same discipline as the span-verification fix: found candidate articles via manifest title search,
+  read the actual abstract, copied an exact substring of the real reported finding, located it
+  with `corpus_text.find_quote` and widened to the paragraph with `verify_spans.expand_to_paragraph`.
+  No offset was typed by hand; every span is a program-verified location, same standard the
+  disagreement cases were held to after their own guessed-offset problem. Deliberately picked for
+  variety, not just repeating the same shape seven times: one prognosis case
+  (`tp53_chondrosarcoma_survival_ord_001`, survival not susceptibility), one subtype-specific case
+  (`tp53_her2_breast_ord_001`, HER2+ specifically, not generic risk), one dose-response case
+  (`atm_at_lymphoid_tumor_ord_001`, kinase activity level, not mutation presence/absence), one
+  modifier case (`brca_prs_ovarian_risk_ord_001`, a polygenic risk score changing risk within
+  carriers, not the base gene-disease link).
+- **A schema limitation surfaced, not fixed:** `brca_prs_ovarian_risk_ord_001` and
+  `brca2_pancreatic_risk_ord_001` both cite sources whose finding genuinely spans two genes (BRCA1
+  and BRCA2 together); the schema's single `gene` field forced picking one and noting the other in
+  `notes`. Not fixed here, real multi-gene evidence cases are rare enough in this batch (2 of 7) not
+  to justify a schema change yet; revisit if it keeps recurring as the set grows.
+- **Reasoning:** cheap to build now with the verification tooling already in hand; expensive to
+  discover the gap after kappa calibration or a baseline comparison already ran against a
+  100%-edge-case set and produced a number that doesn't generalize.
+- **Reversibility:** Cheap. 7 cases, same file, same schema, easy to extend or amend individually.
+  Set is now 19 (4 disagreement, 8 negative, 7 ordinary), still short of the ~50-80 target.
+
+---
+
+## Design decision: BM25-only baseline, hand-built, and the paired comparison tool it needed
+
+- **Date / module:** M1, `eval/` (2026-09-02), logged alongside building it.
+- **Decision:** implemented Okapi BM25 from scratch (`eval/bm25.py`), no ranking library, per
+  `PROJECT_PLAN.md`'s standing rule to implement at least one component with no library. Indexes
+  at paragraph granularity (title/abstract/body paragraphs, the same "\\n"-joined offset convention
+  `corpus_text.py` and `service/search.py` already use), so every retrieval hit carries real
+  `(pmcid, section, char_start, char_end)` provenance, not just a ranked document id. `k1=1.5,
+  b=0.75`: textbook defaults (Robertson & Zaragoza 2009), not tuned against this corpus, tuning is
+  future work once the n>=300 retrieval set exists to tune against, not worth doing against 19
+  cases. Full-corpus index (7,863 articles, 437,133 paragraphs) builds in about 50 seconds,
+  single-process, no multiprocessing needed; persisted to `eval/runs/bm25_index.pkl` (586 MB,
+  git-ignored, regenerable). `eval/baselines/bm25_only.py` retrieves top-8 paragraphs per query,
+  prompts the model to answer using only those excerpts and cite them by index number, then maps
+  cited indices back to their real spans, the model never invents an offset.
+- **A real operational finding, not just a baseline number:** Groq's free tier enforces an 8,000
+  token/minute cap on this model, hit immediately once judge calls (property 1-3 grading, several
+  calls per case) stacked on top of two full baseline runs in the same session. Added retry/backoff
+  to `llm_client.groq_chat_json` (reads the server's own `Retry-After` / `x-ratelimit-reset-tokens`
+  headers, retries up to 5 times) rather than the run just failing partway through. This is exactly
+  the kind of constraint the "free tier for iteration" decision flagged as a real risk to plan
+  around, now a concrete number (8k tokens/min) instead of an abstract warning.
+- **Also built: `eval/compare_runs.py`**, a paired comparison tool (McNemar's exact test on
+  binary pass/not-pass, partial counted as not-pass, a strict reading noted in its own output), used
+  immediately to compare `no_retrieval` against `bm25_only` on the same 19 cases. Built as a
+  reusable tool, not a one-off script: every future ablation (M3 retrieval, M6 chunking, ...) needs
+  exactly this, a paired test against the same case set, per `RESULTS.md`'s own "comparisons are
+  paired" rule.
+- **First real answer to M1's own question, "how much does retrieval buy you":** groundedness goes
+  from 0% (impossible without retrieval, no spans exist to cite) to 75% (n=11-12), McNemar exact
+  p=0.008, real even at this n. The more interesting result is what didn't move: direction/strength
+  pass rate is identical (18%) between the two baselines, zero cases flipped in either direction.
+  Retrieval handing the model correct source text did not fix getting the reported direction wrong.
+  That's evidence the direction failures are a synthesis problem sitting on top of correct
+  retrieval, not a retrieval problem, worth a specific look once M4 error analysis exists rather
+  than assumed away. Full numbers, the paired deltas, and two specific named failures (a
+  fabrication caught, a retrieval-recall miss) are in `docs/RESULTS.md`.
+- **Reasoning:** the point of a from-scratch BM25 isn't the ranking quality (a library would rank
+  fine too), it's owning the retrieval-to-citation provenance chain end to end and being able to
+  explain every line of it, per the project's own "protecting the learning" rule.
+- **Reversibility:** Cheap. The index is a derived artifact (rebuildable from the corpus in under a
+  minute); `k1`/`b`/`top_k` are constructor/CLI parameters, not hardcoded assumptions elsewhere.
