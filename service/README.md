@@ -5,12 +5,9 @@ over the Step 0b corpus. See the module docstrings in `app.py` and `search.py` f
 
 ## This is a stub, on purpose
 
-`search.py` is a trivial keyword matcher: no chunker, no embedder, no vector DB, no LLM. v1 (the
-LangChain/LangGraph/Pinecone system `PROJECT_PLAN.md` 0d expects to install and run) does not
-exist in this repo, so rather than build a real retriever from scratch here, ahead of the eval
-harness that is supposed to gate that work, the service wraps a handler deliberately simple enough
-that it obviously isn't a quality claim. Full rationale in `../docs/DECISION_LOG.md`, "Step 0c
-built as a stub handler, v1 formally dropped."
+`search.py` is a trivial keyword matcher: no chunker, no embedder, no vector DB, no LLM. The 
+service wraps a handler deliberately simple enough that it obviously isn't a quality claim. 
+Full rationale in `../docs/DECISION_LOG.md`, "Step 0c built as a stub handler, v1 formally dropped."
 
 What it's for regardless: **p95, TTFT, and concurrency are properties of a server, not a notebook
 loop.** This app is the real HTTP path every later latency number in this project gets measured
