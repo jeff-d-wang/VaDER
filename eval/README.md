@@ -120,8 +120,8 @@ a missing source file, restore, all via the real CLI).
 ## The eval case format
 
 `answer_cases.example.jsonl` is the target schema, worked examples, one JSON object per line.
-`answer_cases.jsonl` is the canonical, real file: 12 cases as of 2026-09-01 (4 disagreement, 8
-negative), verified
+`answer_cases.jsonl` is the canonical, real file: 19 cases as of 2026-09-02 (4 disagreement, 8
+negative, 7 ordinary evidence), verified, still short of the ~50-80 target in `PROJECT_PLAN.md`
 (see `docs/DECISION_LOG.md`). Fields:
 
 | Field | Meaning |
@@ -141,6 +141,127 @@ for `PMC6896150`). Rows 2-4 are explicitly marked `TEMPLATE`, placeholders showi
 cases to ship as-is; row 3 in particular predates the `find_coverage.py` gene/variant matching
 fix below and should not be treated as a model of how many articles a real negative case holds
 out (see the warning below, it should usually be far fewer than that template implies).
+
+**Gold spans get verified against the source, not trusted on sight.** A `gold_span`'s
+`char_start`/`char_end` is a claim, "this exact range supports this quote," and round-number
+offsets (`0:305`, `950:1450`) are the signature of a guess, not a measurement. Run
+`python verify_spans.py [--fix]` after adding any case whose `disagreement_note` quotes a source:
+it searches the real article text for each quoted phrase (tolerant of whitespace and curly-quote
+drift, falling back to individual sentences if the whole quote doesn't match byte-exact) and
+rewrites the offsets to where the quote actually is, widened to the containing paragraph. A span
+whose note has no literal quote to check is reported as `NO_QUOTE_TO_VERIFY` and left alone, that
+needs a human to locate and confirm by hand (see `corpus_text.py`'s `extract_section_text`, and
+`docs/DECISION_LOG.md`, "Gold-span verification found guessed offsets").
+
+## score.py: the scorer
+
+Grades a *system answer* against `answer_cases.jsonl` per the rubric in `docs/DECISION_LOG.md`
+("Answer-set scoring rubric" and "M1 scorer architecture" entries): four pass/partial/fail
+sub-scores for evidence cases (direction/strength, groundedness, surfaces disagreement,
+says-not-found), two for methods_extraction cases (parameter accuracy, citation). It never talks
+to a live system; it grades a JSONL of already-generated answers against the schema below.
+
+### The system-answer schema
+
+One JSON object per `case_id`, own file, e.g. `runs/no_retrieval_answers.jsonl`:
+
+```json
+{"case_id": "chek2_1100delc_prognosis_disagree_001",
+ "direction": "mixed, worse in older cohorts vs. no difference in modern-treatment cohort",
+ "strength": "moderate",
+ "not_found": false,
+ "answer_text": "Older studies (PMC4150261) found ... but a 2026 study (PMC12702395) found no significant difference, attributing this to modern treatment ...",
+ "claims": [
+   {"text": "CHEK2 1100delC carriers had higher contralateral breast cancer rates",
+    "cited_pmcid": "PMC4150261", "cited_section": "abstract", "cited_char_start": 1283, "cited_char_end": 1539}
+ ]}
+```
+
+`claims` is what groundedness (property 2) scores: each claim's cited span is pulled from the real
+XML via `corpus_text.load_span_text` and checked against the claim text. A claim whose citation
+doesn't resolve (missing file, offsets out of range) counts as unsupported, not a crash. An answer
+with no claims at all fails groundedness outright (`note: "empty_claims"`), not silently N/A: no
+citations is not neutral, it's the specific failure this property exists to catch. For
+`methods_extraction` cases, use `parameter_value` and `cited_pmcid` instead; `gold.expected_value`
+and `gold.expected_pmcids` are what they're checked against.
+
+### Judges
+
+`--judge fake`: no network, deterministic word-overlap grading. Only for testing the scorer's own
+logic (bucket thresholds, N/A handling), see `eval/test_score.py`. Not a real evaluation.
+
+`--judge groq`: the real judge, Groq's free tier (`llama-3.3-70b-versatile`, matching the model
+already decided in `docs/DECISION_LOG.md`). Needs `GROQ_API_KEY` in the environment (free key at
+https://console.groq.com/keys); fails loudly at construction if it's missing rather than silently
+using the fake judge.
+
+### Usage
+
+```
+python score.py --answers runs/no_retrieval_answers.jsonl --judge groq --out runs/no_retrieval_scores.json
+```
+
+Prints each property's `n` / pass / partial / fail / pass_rate, N/A cases excluded from `n` rather
+than counted against the score. No single blended per-case verdict, by design, see the rubric
+decision's own reasoning against a holistic score.
+
+### baselines/no_retrieval.py
+
+The first of `PROJECT_PLAN.md` M1's three required baselines: answers each evidence-stratum query
+from the model's parametric knowledge alone, no corpus context in the prompt. `claims` is always
+empty (there's no retrieval step to cite from), so it fails groundedness by construction, that's
+the measurement, not a bug: it's the "how much does retrieval buy you over the model alone, and
+how much of that is memorization" question `PROJECT_PLAN.md` names explicitly. Needs
+`GROQ_API_KEY`. Writes an answers JSONL plus a `.meta.json` (model, prompt version, git SHA)
+alongside it.
+
+```
+python baselines/no_retrieval.py --out runs/no_retrieval_answers.jsonl
+```
+
+### bm25.py: hand-built retrieval for the second baseline
+
+Okapi BM25 from scratch, no ranking library (see `docs/DECISION_LOG.md`, "BM25-only baseline,
+hand-built"). Indexes every abstract/body paragraph in the corpus with real
+`(pmcid, section, char_start, char_end)` provenance, same offset convention as `corpus_text.py`.
+Build once, reuse:
+
+```
+python -c "
+import csv, sys; sys.path.insert(0, '.')
+from bm25 import build_index
+from pathlib import Path
+pmcids = [r['pmcid'] for r in csv.DictReader(open('../corpus/manifest.csv')) if r.get('status')=='ok']
+build_index(Path('../corpus/xml'), pmcids).save(Path('runs/bm25_index.pkl'))
+"
+```
+
+Takes about 50 seconds over the full 7,863-article corpus (437k paragraphs), single-process. The
+resulting `.pkl` is about 600 MB, git-ignored under `eval/runs/`, rebuild rather than expect it to
+already exist. `baselines/bm25_only.py --index runs/bm25_index.pkl --out runs/bm25_only_answers.jsonl`
+retrieves top-8 paragraphs per query and asks the model to answer from only those, citing them by
+index, mapped back to real spans before scoring, same schema and scorer as `no_retrieval.py`.
+
+### compare_runs.py: paired comparison between two score.py runs
+
+`RESULTS.md`'s own rule: comparisons are paired, not two marginal rates. Runs McNemar's exact test
+per property on binary pass/not-pass (partial counts as not-pass):
+
+```
+python compare_runs.py --a runs/no_retrieval_scores.json --b runs/bm25_only_scores.json \
+    --label-a no_retrieval --label-b bm25_only
+```
+
+Reusable for any future two-config comparison (M3 retrieval, M6 chunking ablations, ...), not
+specific to these two baselines.
+
+### A free-tier limit you'll hit running any of the above
+
+Groq's free tier caps `openai/gpt-oss-120b` at roughly 8,000 tokens/minute. Running the judge over
+even 19 cases (multiple grading calls per case) plus a baseline generation pass in the same session
+hits it routinely. `llm_client.groq_chat_json` retries on 429 automatically (reads the server's own
+`Retry-After` header, up to 5 attempts), so a run just gets slower under load, it doesn't fail; if
+you see `[rate limited, waiting Ns]` lines on stderr, that's expected, let it finish.
 
 ## Handing this to another agent
 
