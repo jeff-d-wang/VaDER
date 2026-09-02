@@ -1,0 +1,3 @@
+# Only needed to run download_datasets.py. loader.py and test_loader.py are
+# stdlib-only, no install required to use an already-downloaded dataset.
+ir_datasets>=0.6

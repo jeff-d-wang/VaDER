@@ -1,8 +1,17 @@
 # Planning docs and local agent instructions. Kept out of the repo on
 # purpose: they carry candid strategy and job-search framing. They are still
 # the working knowledge base, just not version-controlled here.
-docs/
+#
+# docs/* (not docs/) is deliberate: git cannot re-include a file inside a
+# fully-excluded directory, so "docs/" here would silently defeat the
+# "!docs/DECISION_LOG.md" negation below (this actually happened, caught
+# 2026-09-01, DECISION_LOG.md was never tracked despite the negation line
+# existing). docs/* excludes the directory's contents one level at a time,
+# which negation can still see into.
+docs/*
+!docs/DECISION_LOG.md
 CLAUDE.md
+.claude/
 
 # Corpus full text. Hundreds of MB of PMC OA JATS XML, regenerable from
 # corpus/manifest.csv + corpus/run_info.json + ingestion/pull_corpus.py.
@@ -11,6 +20,18 @@ CLAUDE.md
 # are NOT ignored: they are the reproducibility record and must be committed.
 corpus/xml/
 ingestion/corpus/xml/
+
+# eval/: held-out XML for negative cases moves here, not deleted. Regenerable
+# the same way corpus/xml/ is. eval/held_out/held_out_pmcids.csv is NOT
+# ignored: it's the record of which pmcids are held out and why.
+eval/held_out/xml/
+eval/coverage_candidates*.csv
+
+# eval/benchmarks/: downloaded benchmark datasets (SciFact, NFCorpus, etc.)
+# are regenerable from download_datasets.py. Code (loader.py, test_loader.py)
+# is committed; data files (.jsonl, .txt) are not.
+eval/benchmarks/scifact/
+eval/benchmarks/nfcorpus/
 
 # Step 0c service: per-request logs and load-test summaries are regenerated
 # by every run and would silently overwrite each other under git, the exact

@@ -1,0 +1,5 @@
+pair_id,genes,variants,conditions
+brca1_hboc,BRCA1,,breast cancer;ovarian cancer;hereditary breast and ovarian cancer;HBOC
+tp53_lfs,TP53,,Li-Fraumeni;Li-Fraumeni syndrome
+chek2_breast,CHEK2,,breast cancer
+palb2_pancreatic,PALB2,,pancreatic cancer
