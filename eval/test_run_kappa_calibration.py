@@ -24,6 +24,7 @@ Some prose here, not a verdict line.
 - direction: pass
 - groundedness: Partial
 - says_not_found (should NOT have refused): fail
+- disagreement: fail (the system missed the conflict entirely, presenting only one side)
 
 ---
 
@@ -60,8 +61,18 @@ def test_uppercase_verdict_normalized() -> None:
 
 def test_prose_lines_ignored() -> None:
     result = parse_worksheet(SAMPLE)
-    check("only 3 real verdicts on case_one, prose line didn't get parsed as a 4th",
-          len(result["case_one"]) == 3, str(result["case_one"]))
+    check("only 4 real verdicts on case_one, prose line didn't get parsed as a 5th",
+          len(result["case_one"]) == 4, str(result["case_one"]))
+
+
+def test_trailing_rationale_after_verdict_still_parses() -> None:
+    # Regression: an earlier version of _VERDICT_LINE required end-of-line
+    # right after the verdict word, so any annotated verdict ("fail
+    # (explanation)") was silently dropped, undercounting real worksheets
+    # by a large margin. See DECISION_LOG.md.
+    result = parse_worksheet(SAMPLE)
+    check("verdict with a trailing rationale in parens still parsed",
+          result["case_one"].get("disagreement") == "fail", str(result["case_one"]))
 
 
 def test_empty_worksheet_returns_empty() -> None:
@@ -73,6 +84,7 @@ def run_tests() -> int:
     test_blank_verdict_excluded()
     test_uppercase_verdict_normalized()
     test_prose_lines_ignored()
+    test_trailing_rationale_after_verdict_still_parses()
     test_empty_worksheet_returns_empty()
     print(f"\n{'PASS' if not _FAILURES else 'FAIL'}: "
           f"{len(_FAILURES)} failure(s)" if _FAILURES else "All checks passed.")

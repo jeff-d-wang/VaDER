@@ -97,6 +97,27 @@ def test_claims_resolved_to_real_source_text() -> None:
               "A causes B strongly" in section, section)
 
 
+def test_long_span_not_truncated() -> None:
+    # Regression: an earlier version truncated the displayed span to 400
+    # chars, but score.py's judge always grades the full span, so a human
+    # rater using this worksheet saw strictly less evidence than the judge
+    # did, inflating apparent disagreement with a display artifact rather
+    # than a real one. See DECISION_LOG.md, "kappa worksheet truncation bug."
+    with tempfile.TemporaryDirectory() as tmp:
+        xml_dir = Path(tmp)
+        long_abstract = ("A causes B strongly, confirmed in this cohort study. " * 20) + \
+            "The key supporting number appears only here: 53%."
+        (xml_dir / "PMC1.xml").write_text(XML_TEMPLATE.format(abstract=long_abstract, body="x"))
+        check("fixture span is actually longer than the old 400-char cutoff",
+              len(long_abstract) > 400, str(len(long_abstract)))
+
+        claim = Claim("A causes B", "PMC1", "abstract", 0, len(long_abstract))
+        answer = SystemAnswer(case_id="ev2", direction="x", answer_text="answer", claims=[claim])
+        section = format_case(EVIDENCE_PLAIN_CASE, answer, xml_dir)
+        check("full span text appears in the worksheet, including content past char 400",
+              "The key supporting number appears only here: 53%." in section, section[-200:])
+
+
 def test_unresolvable_claim_shown_not_hidden() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         xml_dir = make_xml_dir(tmp)
@@ -112,6 +133,7 @@ def run_tests() -> int:
     test_disagreement_case_shows_extra_line()
     test_plain_evidence_case_omits_disagreement_line()
     test_claims_resolved_to_real_source_text()
+    test_long_span_not_truncated()
     test_unresolvable_claim_shown_not_hidden()
     print(f"\n{'PASS' if not _FAILURES else 'FAIL'}: "
           f"{len(_FAILURES)} failure(s)" if _FAILURES else "All checks passed.")
