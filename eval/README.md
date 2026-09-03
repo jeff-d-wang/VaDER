@@ -263,6 +263,52 @@ hits it routinely. `llm_client.groq_chat_json` retries on 429 automatically (rea
 `Retry-After` header, up to 5 attempts), so a run just gets slower under load, it doesn't fail; if
 you see `[rate limited, waiting Ns]` lines on stderr, that's expected, let it finish.
 
+### split.py: dev/held-out, enforced not just documented
+
+`PROJECT_PLAN.md`'s rule: hold out roughly a third of the answer set from day one, touched at most
+three times across the whole project, so a small set run repeatedly over months doesn't quietly
+become a training set. `dev_held_out_split.csv` (committed, source of truth) assigns each case,
+stratified by type (disagreement/negative/ordinary) and seeded, so the held-out third isn't
+accidentally all-one-type at small n:
+
+```
+python split.py assign --seed 0   # one-shot; re-run later to place newly-added cases only
+python split.py list              # see assignments and the current touch count
+```
+
+`score.py` defaults to `--held-out exclude` (dev split only, currently 13 of 19 cases), the safe
+default. Using `--held-out include` or `--held-out only` requires `--touch-reason "..."` and
+appends a row to `held_out_touches.csv` (also committed, the audit log), printing a warning if the
+count exceeds 3. Don't run the held-out split casually, this cost is real: once an answer to a
+held-out case has been seen, that exposure can't be un-seen.
+
+### kappa.py, make_kappa_worksheet.py, run_kappa_calibration.py: judge calibration
+
+`PROJECT_PLAN.md` M1: "Measure Cohen's kappa between judge and you on a sample... If kappa comes
+back low, the rubric is underspecified, not the judge." This is the one M1 step that has to be run
+by a real person, not built or faked, an LLM judge grading its own calibration would defeat the
+entire point. The workflow:
+
+1. `python make_kappa_worksheet.py --answers runs/bm25_only_answers.jsonl --out kappa_worksheet.md`
+   generates a blind worksheet (dev split only, by default): each case's query, gold label, the
+   system's answer, and every cited claim resolved to its real source text, so groundedness is
+   checkable by reading the actual span. The judge's own verdict is never shown anywhere in it.
+2. A human fills in the `___` blanks with their own pass/partial/fail per property, same rubric the
+   judge used.
+3. `python run_kappa_calibration.py --worksheet kappa_worksheet.md --judge-scores runs/bm25_only_scores.json`
+   parses the filled-in verdicts, pairs them against the judge's stored verdicts for the same
+   case/property, and reports both unweighted and linearly-weighted Cohen's kappa (`kappa.py`,
+   hand-built, weighted because the rubric's pass/partial/fail scale is ordinal, a pass-vs-partial
+   miss should count less than pass-vs-fail, see the module docstring for the derivation of the
+   test values).
+
+The worksheet is git-ignored (`eval/kappa_worksheet*.md`), it's a working document tied to one
+specific answers file, not a durable artifact; a real calibration result goes in
+`docs/DECISION_LOG.md`/`docs/RESULTS.md` once it exists, same as everything else measured here.
+Re-labeling a sample a week later (PROJECT_PLAN.md's self-agreement ceiling, "no judge can beat
+it") reuses the same worksheet generator and comparison tool, just judge-scores swapped for a
+second worksheet's own answers.
+
 ## Handing this to another agent
 
 **Isolate your output.** If more than one agent is working in `eval/` at once, write to your own

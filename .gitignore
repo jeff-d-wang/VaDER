@@ -38,6 +38,12 @@ eval/coverage_candidates*.csv
 # these files by default.
 eval/runs/
 
+# Kappa calibration worksheets: generated from a specific answers file
+# (make_kappa_worksheet.py), and once filled in, contain one person's
+# working hand-labels. Regenerable; the durable record of a calibration
+# result is a DECISION_LOG.md / RESULTS.md entry, not this file.
+eval/kappa_worksheet*.md
+
 # eval/benchmarks/: downloaded benchmark datasets (SciFact, NFCorpus, etc.)
 # are regenerable from download_datasets.py. Code (loader.py, test_loader.py)
 # is committed; data files (.jsonl, .txt) are not.

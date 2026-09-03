@@ -12,6 +12,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+import json
+
+import score
+import split as split_mod
 from judge import FakeJudge
 from score import Claim, SystemAnswer, score_case, summarize, wilson_ci
 
@@ -224,6 +228,66 @@ def test_wilson_ci() -> None:
     check("large n: point estimate inside its own interval", low <= 0.5 <= high)
 
 
+def test_held_out_default_excludes_it() -> None:
+    import contextlib
+    import io
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        xml_dir = make_xml_dir(tmp)
+        cases_path = tmp_path / "cases.jsonl"
+        with open(cases_path, "w") as f:
+            f.write(json.dumps(EVIDENCE_CASE) + "\n")
+            f.write(json.dumps(NEGATIVE_CASE) + "\n")
+        answers_path = tmp_path / "answers.jsonl"
+        with open(answers_path, "w") as f:
+            f.write(json.dumps({"case_id": "ev1", "not_found": False, "claims": []}) + "\n")
+            f.write(json.dumps({"case_id": "neg1", "not_found": True}) + "\n")
+
+        split_mod.CASES_PATH = cases_path
+        split_mod.SPLIT_PATH = tmp_path / "split.csv"
+        split_mod.TOUCHES_PATH = tmp_path / "touches.csv"
+        with open(split_mod.SPLIT_PATH, "w") as f:
+            f.write("case_id,split,case_type,assigned_at_utc,seed\n")
+            f.write("ev1,dev,ordinary,2026-01-01T00:00:00Z,0\n")
+            f.write("neg1,held_out,negative,2026-01-01T00:00:00Z,0\n")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = score.main(["--answers", str(answers_path), "--judge", "fake",
+                              "--cases", str(cases_path), "--xml-dir", str(xml_dir)])
+        check("exit code 0 on default (exclude) run", rc == 0)
+        check("only the dev case (ev1) was scored, held-out case excluded",
+              "Scored 1/1 cases" in buf.getvalue(), buf.getvalue())
+        check("no touch recorded on the default exclude path", split_mod.count_touches() == 0)
+
+        buf2 = io.StringIO()
+        with contextlib.redirect_stdout(buf2):
+            rc2 = score.main(["--answers", str(answers_path), "--judge", "fake",
+                               "--cases", str(cases_path), "--xml-dir", str(xml_dir),
+                               "--held-out", "only", "--touch-reason", "unit test"])
+        check("exit code 0 on --held-out only run", rc2 == 0)
+        check("only the held-out case (neg1) was scored",
+              "Scored 1/1 cases" in buf2.getvalue(), buf2.getvalue())
+        check("a touch WAS recorded when --held-out only was used", split_mod.count_touches() == 1)
+
+
+def test_held_out_requires_touch_reason() -> None:
+    import contextlib
+    import io
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        answers_path = tmp_path / "answers.jsonl"
+        answers_path.write_text("")
+        cases_path = tmp_path / "cases.jsonl"
+        cases_path.write_text("")
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = score.main(["--answers", str(answers_path), "--cases", str(cases_path),
+                              "--held-out", "include"])
+        check("refuses --held-out include without --touch-reason", rc != 0)
+        check("error message explains why", "touch-reason" in buf.getvalue(), buf.getvalue())
+
+
 def run_tests() -> int:
     test_evidence_pass_case()
     test_evidence_no_claims_fails_groundedness()
@@ -235,6 +299,8 @@ def run_tests() -> int:
     test_methods_extraction()
     test_summarize_excludes_na_from_denominator()
     test_wilson_ci()
+    test_held_out_default_excludes_it()
+    test_held_out_requires_touch_reason()
     print(f"\n{'PASS' if not _FAILURES else 'FAIL'}: "
           f"{len(_FAILURES)} failure(s)" if _FAILURES else "All checks passed.")
     return 1 if _FAILURES else 0
