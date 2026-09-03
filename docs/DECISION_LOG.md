@@ -866,3 +866,31 @@ They're here to show the shape, not to stay as clutter.
   this LLM-vs-LLM pass did what it's actually good for, stress-testing the rubric and the judge's
   consistency in applying it, cheaply, before spending a domain expert's real time on the same
   worksheet.
+
+---
+
+## Design decision: skip the real (human) kappa calibration for M1
+
+- **Date / module:** M1, `eval/` (2026-09-03).
+- **Decision:** do not run `PROJECT_PLAN.md`'s judge-vs-human kappa step. The tooling stays built
+  (`eval/kappa.py`, `make_kappa_worksheet.py`, `run_kappa_calibration.py`), reusable the moment
+  someone wants it; the calibration itself is not being done for M1.
+- **Alternatives considered:**
+  - *Recruit a domain expert to run it*: out of scope for a solo learning project on this
+    timeline.
+  - *Treat the Gemini cross-check as sufficient*: rejected as a substitute, logged plainly instead
+    (see the two entries above), agreement between two LLMs is not evidence either is right about
+    the biology, whatever it's separately useful for (it did find two real judge-prompt bugs).
+- **Reasoning:** the LLM-vs-LLM pass already extracted the cheap, high-value part of this exercise,
+  finding concrete, fixable judge-prompt issues, without needing a real rater's time. The remaining
+  value a human calibration adds is specifically the domain-expertise check ("is the judge's
+  biology reasoning sound"), and that value is better spent later, once M4 error analysis exists
+  to show whether judge disagreement is actually a material source of wrong conclusions, rather
+  than spent now on a rubric that's still expected to change as the case set grows.
+- **What this means for interview-readiness:** the "answer cold" question `PROJECT_PLAN.md` poses
+  for M1, "how do you know your eval set is any good," does not have a full answer. Worth stating
+  plainly rather than glossed over: the honest answer right now is "the judge was cross-checked
+  against a second model and two real prompt bugs were found and fixed; it has not been calibrated
+  against a domain expert." That is a true, defensible, incomplete answer, not nothing.
+- **Reversibility:** Free to revisit. Nothing was discarded, the tooling and the corrected
+  worksheet mechanism are both still there.
