@@ -51,8 +51,12 @@ System's stated strength: {answer_strength}
 
 Grade pass/partial/fail:
 - pass: direction and strength both match the gold label in substance (paraphrase is fine).
-- partial: right direction, strength off by one tier, OR direction correct but strength unstated.
-- fail: wrong direction, or a direction that contradicts the gold label.
+- partial: right direction, strength off by one tier, OR direction correct but strength unstated,
+  OR strength overstated/understated by any amount as long as direction is correct.
+- fail: wrong direction, or a direction that contradicts the gold label. Never grade fail for a
+  magnitude/strength mismatch alone: if the direction is correct, the worst verdict is partial, no
+  matter how far off the strength/magnitude is (a "moderate" claim graded as "high risk" is still
+  partial, not fail, if the direction itself, e.g. "increases risk", is right).
 
 Respond with strict JSON: {{"verdict": "pass|partial|fail", "rationale": "one sentence"}}"""
 
@@ -70,6 +74,12 @@ Grade pass/partial/fail:
 Respond with strict JSON: {{"verdict": "pass|partial|fail", "rationale": "one sentence"}}"""
 
 _GROUNDEDNESS_PROMPT = """Does the cited span support the claim? Judge only what the span actually states, not outside knowledge.
+
+A figure caption, table title, or section heading that merely describes what a figure/table is
+about (e.g. "Figure 1: Cumulative risk of X by Y") is NOT support for a claim about what that
+figure/table actually shows, unless the caption itself states the finding (a number, a direction,
+a comparison). "The span mentions the right topic" is not the same as "the span states the claim."
+If the span is only a caption/title/heading with no stated finding, mark unsupported.
 
 Claim: {claim_text}
 Cited span: {cited_span_text}

@@ -841,17 +841,16 @@ They're here to show the shape, not to stay as clutter.
      standard's... association" and still returns `fail`, when the rubric's own text defines
      `partial` as exactly "right direction, strength off by one tier." The judge prompt
      (`judge.py`, `_DIRECTION_PROMPT`) should be tightened to say so explicitly: a magnitude/
-     strength mismatch alone is never `fail` when direction is correct. Not yet changed, this is
-     a recommendation pending discussion, not a done fix, prompt changes shape every future score
-     and shouldn't be made unilaterally.
+     strength mismatch alone is never `fail` when direction is correct. **Applied 2026-09-03**,
+     confirmed with the user first: `_DIRECTION_PROMPT` now states this explicitly.
   2. **The judge credits a citation as "grounded" when it's a figure caption or table header,
      not a sentence stating the actual finding** (`brca_prs_ovarian_risk_ord_001`, all three
      citations are literally "FigureS1: Cumulative risk of ovarian cancer risk in BRCA1 carriers
      by polygenic risk score percentiles" and similar, not a sentence containing the quantified
-     direction). Gemini's `partial` call here looks more careful than the judge's `pass`. The
-     groundedness judge prompt (`_GROUNDEDNESS_PROMPT`) should be told explicitly that a caption
-     or header describing what a figure/table shows is not the same as the figure/table's actual
-     content. Also not yet changed, same reasoning as above.
+     direction). Gemini's `partial` call here looks more careful than the judge's `pass`.
+     **Applied 2026-09-03**: `_GROUNDEDNESS_PROMPT` now states explicitly that a caption/title/
+     heading describing what a figure or table is about is not support for a claim about what it
+     shows, unless the caption itself states the finding.
 - **A data-quality note, not a finding about the judge:** the re-grading pass kept `palb2_breast_
   risk_ord_001`'s groundedness rationale ("the explicit '53%' figure is physically truncated")
   verbatim from the first pass, but the corrected worksheet's claim 4 excerpt for that case now
@@ -859,9 +858,11 @@ They're here to show the shape, not to stay as clutter.
   the 53% is right there). This one verdict looks like it wasn't actually re-checked against the
   fixed worksheet. Left as-is rather than silently corrected, flagged for the user to confirm; at
   n=8 for groundedness, one relabeled case moves the kappa but not the overall picture.
-- **What changed because of this:** two specific judge-prompt tightening recommendations logged,
-  not yet applied (pending user discussion, per the standing rule that the judge/rubric is a
-  discussion, not a unilateral change). The real (human) calibration is still the open item; this
-  LLM-vs-LLM pass did what it's actually good for, stress-testing the rubric and the judge's
+- **What changed because of this:** both prompt tightenings applied to `judge.py` after explicit
+  user confirmation. Every judge-scored row already in `RESULTS.md` (the `no_retrieval` and
+  `bm25_only` baseline runs) predates this prompt version, those numbers were produced by the
+  judge as it existed before this fix and are not automatically still accurate; re-running them is
+  a future step, not implied by this entry. The real (human) calibration is still the open item;
+  this LLM-vs-LLM pass did what it's actually good for, stress-testing the rubric and the judge's
   consistency in applying it, cheaply, before spending a domain expert's real time on the same
   worksheet.

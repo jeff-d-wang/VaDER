@@ -98,6 +98,13 @@ a touch, since the split didn't exist yet, but these two rows are not held-out-c
 cases scored here are now the held-out set. Every run from here on defaults to the 13-case dev
 split only.
 
+**Judge prompt version note (2026-09-03):** an LLM-vs-LLM kappa cross-check (Gemini 3.1 Pro
+against this judge, `docs/DECISION_LOG.md`) surfaced two real judge-prompt issues, fixed the same
+day: magnitude-only strength mismatches were sometimes scored `fail` instead of `partial`, and
+figure captions/table headers were sometimes credited as grounded content. Both rows above were
+scored by the judge *before* this fix. Not re-run yet; treat these two rows as belonging to the
+pre-fix judge version, not the current one, until a fresh run replaces them.
+
 **On the stub handler:** these are Step 0c's required first `RESULTS.md` row (`PROJECT_PLAN.md`
 0c exit criterion), not a system-quality baseline. The handler is deliberately trivial (literal
 keyword match, no retriever); see `docs/DECISION_LOG.md`, "Step 0c built as a stub handler, v1
