@@ -102,8 +102,32 @@ split only.
 against this judge, `docs/DECISION_LOG.md`) surfaced two real judge-prompt issues, fixed the same
 day: magnitude-only strength mismatches were sometimes scored `fail` instead of `partial`, and
 figure captions/table headers were sometimes credited as grounded content. Both rows above were
-scored by the judge *before* this fix. Not re-run yet; treat these two rows as belonging to the
-pre-fix judge version, not the current one, until a fresh run replaces them.
+scored by the judge *before* this fix. SUPERSEDED by the dev-split rerun below, which also fixes
+the held-out-split leakage noted above; kept for the trail, not current numbers.
+
+### Dev-split rerun (13 cases), corrected judge, 2026-09-03
+
+Same two baselines, same corrected `answer_cases.jsonl`, this time correctly scoped to the 13-case
+dev split (`score.py`'s default `--held-out exclude`) and the post-fix judge prompts.
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-03 | M1 | answer | `baseline/no_retrieval_direction` | 0.125 | [0.02, 0.47] | 8 | `cfg-de94e6e15f71` | `57d356d` | evidence-stratum, non-negative dev cases (n=8 of 13) |
+| 2026-09-03 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-de94e6e15f71` | `57d356d` | fails by construction, no spans to cite |
+| 2026-09-03 | M1 | answer | `baseline/no_retrieval_disagreement` | 0.0 | [0.00, 0.56] | 3 | `cfg-de94e6e15f71` | `57d356d` | the 3 dev-split disagreement cases only |
+| 2026-09-03 | M1 | answer | `baseline/no_retrieval_not_found` | 0.846 | [0.58, 0.96] | 13 | `cfg-de94e6e15f71` | `57d356d` | pools all 13 dev cases |
+| 2026-09-03 | M1 | answer | `baseline/bm25_only_direction` | 0.125 | [0.02, 0.47] | 8 | `cfg-d5751bcf985b` | `57d356d` | **paired vs no_retrieval above: delta +0pp, McNemar exact p=1.000.** Same finding as the 19-case run: retrieval still does not move this property |
+| 2026-09-03 | M1 | answer | `baseline/bm25_only_groundedness` | 0.625 | [0.31, 0.86] | 8 | `cfg-d5751bcf985b` | `57d356d` | paired delta +62pp, McNemar exact p=0.062, not quite significant at this smaller n (was p=0.008 at n=11-12 in the 19-case run); direction of effect unchanged |
+| 2026-09-03 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-d5751bcf985b` | `57d356d` | paired delta +67pp, McNemar exact p=0.500, n=3 too small to read |
+| 2026-09-03 | M1 | answer | `baseline/bm25_only_not_found` | 0.923 | [0.67, 0.99] | 13 | `cfg-d5751bcf985b` | `57d356d` | paired delta +8pp, McNemar exact p=1.000 |
+
+**What changed vs. the 19-case run, and what didn't:** the core finding survives at the smaller,
+held-out-clean n: retrieval buys real groundedness (direction of effect unchanged, same size) and
+buys nothing on direction/strength (still exactly flat, 12.5% both baselines, still zero cases
+flipped). The groundedness paired test is no longer under the conventional p<0.05 line (p=0.062
+vs the earlier p=0.008), purely a sample-size effect from correctly excluding the 6 held-out cases,
+not a change in the effect itself. This is the number to cite going forward; the 19-case rows above
+mixed held-out cases into a "dev" result and used the pre-fix judge, kept for the trail only.
 
 **On the stub handler:** these are Step 0c's required first `RESULTS.md` row (`PROJECT_PLAN.md`
 0c exit criterion), not a system-quality baseline. The handler is deliberately trivial (literal
