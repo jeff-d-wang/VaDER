@@ -659,3 +659,79 @@ They're here to show the shape, not to stay as clutter.
   explain every line of it, per the project's own "protecting the learning" rule.
 - **Reversibility:** Cheap. The index is a derived artifact (rebuildable from the corpus in under a
   minute); `k1`/`b`/`top_k` are constructor/CLI parameters, not hardcoded assumptions elsewhere.
+
+---
+
+## Design decision: dev/held-out split, enforced by score.py, not just documented
+
+- **Date / module:** M1, `eval/` (2026-09-02), logged alongside building it.
+- **Decision:** implemented `PROJECT_PLAN.md`'s stratification rule (hold out roughly a third of
+  the answer set from day one, touched at most three times across the whole project) as actual
+  tooling, not a promise. `eval/split.py` assigns each case to `dev` or `held_out`, stratified by
+  case type (disagreement / negative / ordinary) and seeded (seed 0, same discipline as the
+  corpus's own uniform-random sampling), so the held-out third isn't accidentally all-one-type at
+  n=19. `score.py --held-out {exclude,include,only}` defaults to `exclude` (dev-only, the safe
+  default a normal run can't get wrong by omission); using `include` or `only` requires
+  `--touch-reason` and automatically appends a row to `held_out_touches.csv`, so "at most three
+  times" is an auditable count, not an honor-system rule living only in a doc.
+- **Result of this run:** 19 cases split 13 dev / 6 held-out (`chek2_breast_popul_specific_disagree_001`,
+  `brca2_c9097c_t_ovarian_neg_001`, `palb2_c697c_t_colorectal_neg_001`,
+  `tp53_c242c_g_lymphoma_neg_001`, `chek2_prostate_risk_ord_001`, `tp53_her2_breast_ord_001`),
+  spanning all three case types.
+- **A real wrinkle, disclosed rather than smoothed over:** both baseline runs in `RESULTS.md`
+  (`no_retrieval` and `bm25_only`, same day, before this split existed) scored all 19 cases,
+  including what are now the 6 held-out ones. The split concept didn't exist yet when those ran, so
+  this isn't counted as a "touch," but it does mean today's published baseline numbers are not
+  held-out-clean; a stricter read would treat them as dev-set numbers that happen to include a few
+  held-out cases this one time. Going forward, a normal evaluation run should use the default
+  `--held-out exclude` (13 dev cases), reserving the 6 held-out for real milestone checks only.
+- **Alternatives considered:**
+  - *Simple random split, not stratified by case type*: rejected at n=19, a third is only 6-7 cases,
+    unstratified random has a real chance of landing entirely on one case type (e.g. all negative
+    cases), which would make the held-out check useless for the other two types.
+  - *Document the rule in `eval/README.md` only, no enforcement*: rejected, matches the project's
+    own pattern of catching a documented-but-unenforced rule failing silently (the `.gitignore`
+    negation bug, the `find_coverage.py` matching bug), better to make violating it require an
+    explicit flag and a logged reason than to trust memory across a multi-month project.
+- **Reasoning:** the whole point of a held-out split is that repeated iteration against the same
+  small set quietly turns it into a training set; a split that's easy to accidentally include in a
+  normal run defeats its own purpose. Making the safe path the default and the unsafe path require
+  a reason is the same shape as `hold_out_case.py`'s cross-pair-reassignment guard and
+  `find_coverage.py`'s `--warn-threshold` banner, tools in this project already enforce their own
+  discipline rather than relying on remembering it.
+- **Reversibility:** Cheap to extend (new cases get assigned on the next `split.py assign` run
+  without disturbing existing ones); expensive to undo meaningfully (once a case has been touched
+  as held-out and the answer seen, that exposure can't be un-seen, which is exactly why the touch
+  log exists, to make that cost visible rather than free).
+
+---
+
+## Design decision: kappa calibration tooling built; the calibration itself deliberately not run by me
+
+- **Date / module:** M1, `eval/` (2026-09-02), logged alongside building it.
+- **Decision:** built the full pipeline for `PROJECT_PLAN.md`'s judge-vs-human kappa step
+  (`eval/kappa.py`: hand-built unweighted and linearly-weighted Cohen's kappa;
+  `eval/make_kappa_worksheet.py`: generates a blind worksheet, dev-split cases, judge's own verdict
+  never shown; `eval/run_kappa_calibration.py`: parses a filled-in worksheet and reports kappa
+  against the judge's stored scores). Deliberately did **not** fill in the worksheet myself, that
+  is the one M1 step `CLAUDE.md` and `PROJECT_PLAN.md` both name as belonging to a real person: "the
+  eval scorer and failure taxonomy [are] a discussion with the user, not a handoff," and kappa
+  specifically measures agreement *between the judge and a human*, an LLM (me) filling in both
+  sides would produce a number that looks like a real calibration result and measures nothing.
+  Verified the pipeline works end to end with a throwaway smoke test (rotating placeholder
+  verdicts unrelated to any real judgment, run against a scratch copy outside `eval/`, discarded
+  immediately, not committed, not reported as a result anywhere).
+- **Alternatives considered:**
+  - *Generate plausible-looking human verdicts myself, from reading the same worksheet content*:
+    rejected outright. Even framed as "a reasonable second opinion," this is exactly the failure
+    mode the calibration step exists to prevent, an automated system checking its own homework
+    and reporting the result as if it were independent.
+  - *Skip kappa entirely for now, note it as not-yet-done*: considered, but the tooling itself
+    (worksheet generation, parsing, the weighted-kappa math) is real work with no dependency on
+    who does the labeling, worth having ready rather than built later under time pressure once
+    someone actually wants to run it.
+- **Reasoning:** the whole point of measuring judge-vs-human agreement is that the human side is
+  independent of the automated side; building the mechanism and refusing to be the mechanism's own
+  human are two different things, this decision is only really about the second one.
+- **Reversibility:** N/A, nothing was measured. The tooling is reusable the moment a real worksheet
+  gets filled in.

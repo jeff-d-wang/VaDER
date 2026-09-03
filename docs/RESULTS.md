@@ -92,6 +92,12 @@ in the corpus but wasn't retrieved into the top-8 (`tp53_chondrosarcoma_survival
 small-n instance of exactly the retrieval-vs-generation attribution question M4 exists to answer
 systematically.
 
+**Held-out split note:** both runs above scored all 19 cases, before `eval/split.py`'s dev/held-out
+split existed later the same day (see `docs/DECISION_LOG.md`, "dev/held-out split"). Not counted as
+a touch, since the split didn't exist yet, but these two rows are not held-out-clean: 6 of the 19
+cases scored here are now the held-out set. Every run from here on defaults to the 13-case dev
+split only.
+
 **On the stub handler:** these are Step 0c's required first `RESULTS.md` row (`PROJECT_PLAN.md`
 0c exit criterion), not a system-quality baseline. The handler is deliberately trivial (literal
 keyword match, no retriever); see `docs/DECISION_LOG.md`, "Step 0c built as a stub handler, v1

@@ -38,6 +38,7 @@ from typing import Optional
 
 from corpus_text import load_span_text
 from judge import Judge, JudgeResult, make_judge
+from split import load_split, record_touch, MAX_RECOMMENDED_TOUCHES
 
 CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
 XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
@@ -254,18 +255,42 @@ def summarize(scores: list[CaseScore]) -> dict:
     return summary
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--answers", required=True, help="JSONL of system answers, one per case_id")
     parser.add_argument("--judge", default="fake", choices=["fake", "groq"])
     parser.add_argument("--cases", default=str(CASES_PATH))
     parser.add_argument("--xml-dir", default=str(XML_DIR))
     parser.add_argument("--out", help="write full per-case results as JSON here")
-    args = parser.parse_args()
+    parser.add_argument("--held-out", choices=["exclude", "include", "only"], default="exclude",
+                         help="exclude (default, safe): dev split only. include/only: also or "
+                              "only score the held-out split, requires --touch-reason and is "
+                              "logged to held_out_touches.csv")
+    parser.add_argument("--touch-reason", help="required with --held-out include|only")
+    parser.add_argument("--touched-by", default="user")
+    args = parser.parse_args(argv)
+
+    if args.held_out != "exclude" and not args.touch_reason:
+        print("--held-out include|only requires --touch-reason (this gets logged to "
+              "held_out_touches.csv; a real reason, not a placeholder)", file=sys.stderr)
+        return 2
 
     cases = {c["case_id"]: c for c in load_jsonl(Path(args.cases))}
+    split = load_split()
+    if split and args.held_out != "include":
+        wanted_split = "held_out" if args.held_out == "only" else "dev"
+        cases = {cid: c for cid, c in cases.items()
+                 if split.get(cid, "dev") == wanted_split}
     answers = {a["case_id"]: SystemAnswer.from_dict(a) for a in load_jsonl(Path(args.answers))}
     judge = make_judge(args.judge)
+
+    if args.held_out != "exclude":
+        held_out_ids = [cid for cid in cases if split.get(cid) == "held_out"]
+        n_touches = record_touch(args.touch_reason, args.touched_by, len(held_out_ids))
+        warn = "  *** exceeds the recommended 3-touch cap, see eval/README.md ***" if \
+            n_touches > MAX_RECOMMENDED_TOUCHES else ""
+        print(f"Held-out split touched: {len(held_out_ids)} case(s), "
+              f"this is touch #{n_touches}.{warn}\n", file=sys.stderr)
 
     missing = set(cases) - set(answers)
     if missing:
