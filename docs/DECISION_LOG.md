@@ -817,3 +817,51 @@ They're here to show the shape, not to stay as clutter.
 - **What changed because of this:** nothing is marked as "M1's kappa calibration: done." The real
   calibration, a professional or domain-literate human against a corrected (untruncated) worksheet,
   is still open.
+
+---
+
+## Experiment: LLM-vs-LLM grading pass, redone after the truncation fix, and two rubric-application findings
+
+- **Date / module:** M1, `eval/` (2026-09-03), continues the two entries directly above.
+- **Prediction:** fixing the truncation bug would raise groundedness agreement substantially,
+  since 4 of 5 manually-checked disagreements from the first pass turned out to be truncation
+  artifacts. No prediction for direction/disagreement, those don't depend on span text.
+- **Method:** same worksheet generator and comparison tool, re-run against the corrected
+  (untruncated) worksheet, same judge scores (`runs/bm25_only_scores.json`), same 13 dev cases.
+- **Result:** groundedness kappa rose from 0.059/0.158 (unweighted/weighted) to **0.226/0.429**
+  (fair/moderate), confirming the prediction, most of the first pass's apparent judge unreliability
+  was the bug, not the judge. Remaining numbers: direction 0.216/0.200 (fair, unchanged, doesn't
+  depend on span text), disagreement 0.0 (n=3, one real disagreement, still too small to read),
+  not_found 1.0 (n=13, perfect, unaffected either time).
+- **Did the prediction hold?** Yes for groundedness. No prediction was made for the others.
+- **Two concrete, actionable findings survive this pass, not just a kappa number:**
+  1. **The judge conflates "wrong direction" with "right direction, wrong magnitude" under `fail`,**
+     contradicting its own rubric. Its stored rationale for `brca2_pancreatic_risk_ord_001`
+     literally says "Direction matches, but the claimed... risk... greatly overstates the gold
+     standard's... association" and still returns `fail`, when the rubric's own text defines
+     `partial` as exactly "right direction, strength off by one tier." The judge prompt
+     (`judge.py`, `_DIRECTION_PROMPT`) should be tightened to say so explicitly: a magnitude/
+     strength mismatch alone is never `fail` when direction is correct. Not yet changed, this is
+     a recommendation pending discussion, not a done fix, prompt changes shape every future score
+     and shouldn't be made unilaterally.
+  2. **The judge credits a citation as "grounded" when it's a figure caption or table header,
+     not a sentence stating the actual finding** (`brca_prs_ovarian_risk_ord_001`, all three
+     citations are literally "FigureS1: Cumulative risk of ovarian cancer risk in BRCA1 carriers
+     by polygenic risk score percentiles" and similar, not a sentence containing the quantified
+     direction). Gemini's `partial` call here looks more careful than the judge's `pass`. The
+     groundedness judge prompt (`_GROUNDEDNESS_PROMPT`) should be told explicitly that a caption
+     or header describing what a figure/table shows is not the same as the figure/table's actual
+     content. Also not yet changed, same reasoning as above.
+- **A data-quality note, not a finding about the judge:** the re-grading pass kept `palb2_breast_
+  risk_ord_001`'s groundedness rationale ("the explicit '53%' figure is physically truncated")
+  verbatim from the first pass, but the corrected worksheet's claim 4 excerpt for that case now
+  visibly ends "...compared to an estimated 53% risk of breast cancer in women [32]." (untruncated,
+  the 53% is right there). This one verdict looks like it wasn't actually re-checked against the
+  fixed worksheet. Left as-is rather than silently corrected, flagged for the user to confirm; at
+  n=8 for groundedness, one relabeled case moves the kappa but not the overall picture.
+- **What changed because of this:** two specific judge-prompt tightening recommendations logged,
+  not yet applied (pending user discussion, per the standing rule that the judge/rubric is a
+  discussion, not a unilateral change). The real (human) calibration is still the open item; this
+  LLM-vs-LLM pass did what it's actually good for, stress-testing the rubric and the judge's
+  consistency in applying it, cheaply, before spending a domain expert's real time on the same
+  worksheet.
