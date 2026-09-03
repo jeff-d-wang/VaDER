@@ -34,7 +34,11 @@ _PROPERTY_ALIASES = {
     "citation": "citation",
 }
 _VERDICT_LINE = re.compile(
-    r"^-\s*([a-z_]+)\s*(?:\([^)]*\))?:\s*(pass|partial|fail|___)\s*$", re.IGNORECASE
+    # Trailing rationale after the verdict is expected and common ("fail
+    # (claim 3 relies on...)"), so only the word itself is anchored, not
+    # end-of-line; a first version of this regex required end-of-line and
+    # silently dropped every annotated verdict, see DECISION_LOG.md.
+    r"^-\s*([a-z_]+)\s*(?:\([^)]*\))?:\s*(pass|partial|fail|___)\b", re.IGNORECASE
 )
 
 

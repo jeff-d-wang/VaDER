@@ -60,8 +60,14 @@ def format_case(case: dict, answer: SystemAnswer, xml_dir: Path) -> str:
             if err:
                 lines.append(f"   Citation ({claim.cited_pmcid}) does not resolve: {err}")
             else:
+                # Full span, not truncated: score.py's judge grades against
+                # the full text (corpus_text.load_span_text), so showing
+                # less here would grade the human rater on less evidence
+                # than the judge had, and inflate apparent disagreement
+                # with a truncation artifact rather than a real one. See
+                # docs/DECISION_LOG.md, "kappa worksheet truncation bug."
                 lines.append(f"   Cited source ({claim.cited_pmcid}, {claim.cited_section}): "
-                              f"\"{span_text[:400]}\"")
+                              f"\"{span_text}\"")
     else:
         lines.append("**System's cited claims:** none.")
     lines.append("")

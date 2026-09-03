@@ -735,3 +735,85 @@ They're here to show the shape, not to stay as clutter.
   human are two different things, this decision is only really about the second one.
 - **Reversibility:** N/A, nothing was measured. The tooling is reusable the moment a real worksheet
   gets filled in.
+
+---
+
+## Experiment: kappa worksheet truncation bug, found reviewing the first real grading pass
+
+- **Date / module:** M1, `eval/` (2026-09-03).
+- **What happened:** the worksheet got filled in, not by the user directly (no professional
+  oncology background) but with Gemini 3.1 Pro's help. That is a real, disclosed deviation from
+  what the tool was built for, see the entry immediately below; this entry is about a second,
+  independent problem the review of that grading pass surfaced, a bug in the worksheet itself.
+  `make_kappa_worksheet.py` truncated every cited span to 400 characters for display
+  (`span_text[:400]`). `score.py`'s judge always grades the full, untruncated span
+  (`corpus_text.load_span_text`). A rater using the worksheet was therefore graded on strictly
+  less evidence than the judge had, and any resulting "disagreement" could be the worksheet hiding
+  real supporting text, not an actual difference of judgment.
+- **Prediction (had this been caught before grading, not after):** would have predicted this
+  matters a lot, most real citations are full paragraphs (200-2000+ chars), so a 400-char cutoff
+  would cut off in the middle of most of them, right where a specific number or conclusion often
+  sits.
+- **Method:** manually re-checked the full (untruncated) span text for every claim the grading
+  pass had marked as ungrounded/partially-grounded where the span exceeded 400 characters, 5
+  claims across 3 cases.
+- **Result:** 4 of 5 were fully supported once the truncated portion was read: an "A large cohort
+  of A-T patients from the UK and the Netherlands" sentence cut off right before the word "large
+  cohort" itself; a "no worse outcome for CHEK2 c.1100delC... ER-positive" sentence cut off one
+  clause before the exact matching conclusion; three pancreatic-cancer relative-risk/lifetime-risk
+  figures (up to 4.11-fold BRCA1, 2.13-21.7-fold BRCA2, ~1%/4.9% lifetime risk) that closely match
+  what the system claimed, sitting entirely past the 400-char mark. Only 1 of 5 held up as a
+  genuine miss even with full text: two claims in `atm_variants_controversy_disagree_001` cited a
+  2,149-character span about BRCA1/2 prevalence in Chile with zero mention of ATM anywhere in it,
+  a real mismatched/hallucinated citation the judge nonetheless scored as grounded.
+- **Did the prediction hold?** Yes, more strongly than expected. This wasn't a marginal effect,
+  the truncation bug explains the large majority of the groundedness disagreement in this grading
+  pass, not a small fraction of it.
+- **What changed because of this:** fixed `make_kappa_worksheet.py` to show the full span (no
+  truncation), added a regression test. The groundedness kappa numbers from this grading pass
+  (see the entry below) should be read as contaminated by this bug, not as a clean signal about
+  judge accuracy, apart from the one genuine miss identified above, which is real and worth
+  keeping: the judge can score a topically-plausible-sounding citation as "grounded" without the
+  cited text actually being about the claimed subject. That specific failure mode is worth
+  watching for in the judge going forward, independent of this bug.
+
+---
+
+## Design decision: the kappa grading pass used Gemini 3.1 Pro, not a human, and what that does and doesn't tell us
+
+- **Date / module:** M1, `eval/` (2026-09-03).
+- **What happened:** the user had Gemini 3.1 Pro fill in `kappa_worksheet.md`, citing lack of
+  professional oncology background. This does not satisfy `PROJECT_PLAN.md`'s calibration step
+  ("Measure Cohen's kappa between judge and you") or `CLAUDE.md`'s standing rule that the eval
+  scorer be "a discussion with the user, not a handoff": the resulting number is agreement between
+  two LLMs (Groq's `openai/gpt-oss-120b` judge and Gemini 3.1 Pro), not judge-vs-human. Logged
+  here plainly rather than let a kappa number from this pass be mistaken for the real calibration
+  in a later session.
+- **What it is still worth, and what it isn't:** an LLM-vs-LLM cross-check is a real, if different,
+  signal, two independently-prompted models grading the same rubric against the same evidence is a
+  reasonable smoke test of whether the rubric itself is followable and whether the judge's
+  citation-checking is basically sound (see the truncation-bug entry above: once corrected for that
+  bug, the two models' groundedness judgments mostly converged). It is not a substitute for the
+  domain-expertise check the human calibration step exists for: neither model has the comp-bio
+  judgment the task contract's own correctness definition assumes, and two models agreeing with
+  each other is not evidence that either is right about the biology.
+  Per-property numbers from this pass, **contaminated by the truncation bug above for groundedness
+  specifically**, not fully re-verified for the others: direction kappa (unweighted) = 0.216
+  (fair), disagreement kappa = 0.0 (n=3, one real disagreement, too small to read as anything),
+  not_found kappa = 1.0 (n=13, perfect agreement, this property doesn't depend on span text so
+  isn't affected by the truncation bug).
+- **A real, likely-genuine pattern in the direction disagreements, independent of the truncation
+  bug:** all 5 direction disagreements went the same way, Gemini graded "pass," the judge graded
+  "partial." In each checked case, the system's stated *direction* was correct but its *strength*
+  was either vague, unquantified, or stated in different units than gold (e.g. relative-risk
+  fold-change vs. gold's lifetime-risk percentage). This reads as a genuine difference in how
+  strictly to weight the rubric's own "strength" half of property 1, not noise, and not either
+  side being unfair: the rubric's partial criterion ("right direction, strength off by one tier
+  ... or direction correct but strength unstated") explicitly supports the judge's stricter
+  reading. Worth settling explicitly if this recurs once a real human labels a sample.
+- **Reasoning:** disclosure over convenience. A mislabeled LLM-vs-LLM number sitting in the log as
+  if it were the real calibration would be exactly the kind of quiet error this project's own
+  logging discipline exists to prevent.
+- **What changed because of this:** nothing is marked as "M1's kappa calibration: done." The real
+  calibration, a professional or domain-literate human against a corrected (untruncated) worksheet,
+  is still open.
