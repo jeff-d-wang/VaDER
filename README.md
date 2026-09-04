@@ -9,7 +9,30 @@ but to understand the practice around it too: evaluation methodology, error anal
 
 ## Status
 
-**Step 0, nearly done.** Task contract: variant-disease evidence retrieval, scoped to cancer genomics (see `docs/TASK_CONTRACT.md`). The corpus is pulled: 7,863 PMC Open Access full-text articles, cancer-genomics variant-disease net, snapshot 2026-08-30. A FastAPI service is up and measured (`service/`), wrapping a deliberately trivial stub handler since v1 turned out not to exist in this repo; see `docs/DECISION_LOG.md` for both calls. What remains before Tier 1: decide whether to locate v1 or drop it, then start the eval harness (M1).
+**Step 0 done. Tier 1 in progress (M1 mostly built, phase A of the v4 execution order next).**
+
+Task contract: variant-disease evidence retrieval, scoped to cancer genomics
+(`docs/TASK_CONTRACT.md`). Corpus: 7,863 PMC Open Access full-text articles, snapshot 2026-08-30.
+A FastAPI service is up and measured (`service/`), still wrapping a deliberately trivial stub
+handler. The eval harness exists and has produced real numbers: a four-property scorer with an LLM
+judge, a hand-built BM25 over 437k paragraphs, two baselines run and compared with a paired
+McNemar test, and an enforced dev/held-out split (`docs/RESULTS.md`).
+
+**The headline number, and the story behind it, is the honest advertisement for this project.**
+Retrieval buys real groundedness: 0% to 75%, +75 points paired, McNemar p=0.031 at n=8. Whether it
+helps the model report the *direction* of an association correctly is, at this sample size,
+unknown: +12 points, p=1.000.
+
+That second sentence used to read "buys nothing at all, 12.5% either way, zero cases flipped."
+Then a human validation pass over 8 of the 19 eval cases found **4 of them defective**, including
+one where the tool meant to verify gold spans had itself repointed a span onto a paragraph about a
+different variant. After repairing the set, three cases flip where none had before, and the
+confident negative result evaporated. Repairing the gold labels also roughly doubled both
+baselines' measured direction scores, because two cases had been marking correct answers wrong.
+
+The most interesting result in the repo was the one that did not survive contact with a validated
+eval set. That is written up rather than quietly corrected: see `docs/DECISION_LOG.md`'s phase A1
+entries and the standing caveat in `docs/RESULTS.md`. `docs/START_HERE.md` has current status.
 
 ## Why this exists
 

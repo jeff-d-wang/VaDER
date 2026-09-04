@@ -1,1 +1,7 @@
 pair_id,pmcid,gene,variant,condition,held_out_at_utc,note
+brca1_c4484plus2t_c_prostate,PMC12485378,BRCA1,c.4484+2T>C,prostate cancer,2026-09-04T05:43:02.847070+00:00,df=1 mined; gene attribution read from source
+brca2_c9275a_g_ovarian,PMC13223255,BRCA2,c.9275A>G,ovarian cancer,2026-09-04T05:43:02.894567+00:00,df=1 mined; gene attribution read from source
+brca2_c8010g_c_prostate,PMC12035019,BRCA2,c.8010G>C,prostate cancer,2026-09-04T05:43:02.942571+00:00,df=1 mined; gene attribution read from source
+atm_c2502_2503insa_endometrial,PMC9885574,ATM,c.2502_2503insA,endometrial cancer,2026-09-04T05:43:02.997162+00:00,"df=1 mined; source says ATM, mining tool wrongly said BRCA2"
+atm_c4777minus1g_c_pancreatic,PMC12295162,ATM,c.4777-1G>C,pancreatic cancer,2026-09-04T05:43:03.052578+00:00,df=1 mined; gene attribution read from source
+tp53_c826_827gc_at_ovarian,PMC5983728,TP53,c.826_827GC>AT,ovarian cancer,2026-09-04T05:43:03.114499+00:00,df=1 mined; gene attribution read from source

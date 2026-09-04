@@ -126,11 +126,45 @@ def test_extract_quotes() -> None:
     check("no quotes in a note with no single-quote marks", extract_quotes("Plain text, no quotes.") == [])
 
 
+def test_subject_check():
+    """The check this script lacked until 2026-09-04. The regression it
+    guards is real and is in the repo's history: a quote about ATM
+    c.7271T>G was located, verified as present, and written in as the gold
+    span for a case about ATM c.7570G>C."""
+    from verify_spans import subject_check
+
+    case = {"gene": "ATM", "variant": "c.7570G>C"}
+    gene_level = {"gene": "BRCA2", "variant": None}
+
+    check("span naming the exact variant is ok",
+          subject_check("ATM c.7570G>C associates with breast cancer", case)[0] == "ok")
+
+    check("the real regression: right gene, wrong variant, is gene_only not ok",
+          subject_check(
+              "This has previously been demonstrated for ATM c.7271T>G, (p.Val2424Gly), "
+              "having up to 60% lifetime breast cancer by the age of 70 years.", case)[0]
+          == "gene_only")
+
+    check("span naming neither is absent",
+          subject_check("Polygenic risk scores in unselected cohorts.", case)[0] == "absent")
+
+    check("variant matches without the c. prefix",
+          subject_check("the 7570G>C allele was enriched", case)[0] == "ok")
+
+    check("gene-level case (no variant) is ok on a gene mention",
+          subject_check("germline BRCA2 mutation carriers", gene_level)[0] == "ok")
+
+    check("gene match is whole-word, not a substring",
+          subject_check("the ATMIN cofactor was measured", {"gene": "ATM", "variant": None})[0]
+          == "absent")
+
+
 def run_tests() -> int:
     test_extract_section_text()
     test_find_quote()
     test_expand_to_paragraph()
     test_extract_quotes()
+    test_subject_check()
     print(f"\n{'PASS' if not _FAILURES else 'FAIL'}: "
           f"{len(_FAILURES)} failure(s)" if _FAILURES else "All checks passed.")
     return 1 if _FAILURES else 0
