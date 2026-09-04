@@ -1,5 +1,5 @@
 """Stdlib-only tests for corpus_text.py and verify_spans.py. Run directly:
-    python test_verify_spans.py
+    python -m eval.tests.test_verify_spans
 """
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from corpus_text import extract_section_text, find_quote
-from verify_spans import expand_to_paragraph, extract_quotes
+from common.corpus_text import extract_section_text, find_quote
+from eval.verify_spans import expand_to_paragraph, extract_quotes
 
 _FAILURES: list[str] = []
 
@@ -131,7 +131,7 @@ def test_subject_check():
     guards is real and is in the repo's history: a quote about ATM
     c.7271T>G was located, verified as present, and written in as the gold
     span for a case about ATM c.7570G>C."""
-    from verify_spans import subject_check
+    from eval.verify_spans import subject_check
 
     case = {"gene": "ATM", "variant": "c.7570G>C"}
     gene_level = {"gene": "BRCA2", "variant": None}

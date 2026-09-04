@@ -19,8 +19,8 @@ in docs/DECISION_LOG.md before this was ever run: different k1/b, no
 stemming, no stopword removal, single concatenated field.
 
 Usage:
-    python run_benchmark.py --dataset scifact
-    python run_benchmark.py --dataset nfcorpus --out ../runs/nfcorpus_bm25.json
+    python -m eval.benchmarks.run_benchmark --dataset scifact
+    python -m eval.benchmarks.run_benchmark --dataset nfcorpus --out ../runs/nfcorpus_bm25.json
 """
 from __future__ import annotations
 
@@ -30,12 +30,10 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import ir_metrics  # noqa: E402
-from bm25 import build_index_from_texts  # noqa: E402
-from ir_metrics import QueryResult  # noqa: E402
-from loader import load_benchmark  # noqa: E402
+from eval.benchmarks.loader import load_benchmark
+from retrieval import ir_metrics
+from retrieval.bm25 import build_index_from_texts
+from retrieval.ir_metrics import QueryResult
 
 # nDCG@10 and Recall@100, from the reference above. Kept here so a run
 # prints the comparison instead of leaving it to be looked up later.

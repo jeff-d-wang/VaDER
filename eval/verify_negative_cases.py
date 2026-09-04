@@ -31,7 +31,7 @@ here is a regression guard on the construction, not an independent proof of
 absence.
 
 Usage:
-    python verify_negative_cases.py
+    python -m eval.verify_negative_cases
 """
 from __future__ import annotations
 
@@ -43,10 +43,10 @@ import sys
 from multiprocessing import Pool
 from pathlib import Path
 
-from corpus_text import extract_section_text
+from common.corpus_text import extract_section_text
 
 EVAL_DIR = Path(__file__).parent
-CASES_PATH = EVAL_DIR / "answer_cases.jsonl"
+CASES_PATH = EVAL_DIR / "data" / "answer_cases.jsonl"
 XML_DIR = EVAL_DIR.parent / "corpus" / "xml"
 MANIFEST = EVAL_DIR.parent / "corpus" / "manifest.csv"
 REGISTRY = EVAL_DIR / "held_out" / "held_out_pmcids.csv"

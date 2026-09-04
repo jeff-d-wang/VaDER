@@ -1,9 +1,9 @@
-"""Stdlib-only tests for compare_runs.py. Run directly: python test_compare_runs.py"""
+"""Stdlib-only tests for compare_runs.py. Run directly: python -m eval.tests.test_compare_runs"""
 from __future__ import annotations
 
 import sys
 
-from compare_runs import mcnemar_exact_p
+from eval.compare_runs import mcnemar_exact_p
 
 _FAILURES: list[str] = []
 

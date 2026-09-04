@@ -1,9 +1,42 @@
-# eval/: M1 eval-set construction tooling
+# eval/
 
-Early Tier 1 (M1) tooling for building the `answer` eval set (`PROJECT_PLAN.md` M1). Not the eval harness or scorer themselves, those are a separate, larger discussion (see `docs/DECISION_LOG.md`
-for the rubric decisions so far: four sub-scores per case, pass/partial/fail grading, a
-methods-extraction stratum alongside the evidence cases). This directory currently holds the
-tool that finds candidate source material for two of the harder case types.
+The evaluation harness: the eval set, the scorer and its judge, the baselines, and the tooling
+that keeps the gold labels honest.
+
+**Everything here runs as a module from the repo root**, not as a script from this directory:
+
+```
+python -m eval.score --answers runs/bm25_only_answers.jsonl --judge groq
+python run_tests.py                     # every test module in the project
+```
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `data/` | the eval set itself: `answer_cases.jsonl`, the dev/held-out split, the touch log |
+| `score.py`, `judge.py` | the scorer and the LLM judge behind it, four sub-scores per case |
+| `split.py` | dev/held-out enforcement, with a touch log that makes exposure visible |
+| `baselines/` | the generators the scorer grades: no-retrieval, BM25-only |
+| `benchmarks/` | SciFact and NFCorpus, for checking the harness against known-good labels |
+| `find_coverage.py`, `hold_out_case.py`, `mine_rare_variants.py` | building cases |
+| `verify_spans.py`, `check_gold_claims.py`, `verify_negative_cases.py` | keeping cases honest |
+| `make_case_worksheet.py` | putting cases in front of a human to validate |
+| `kappa.py`, `make_kappa_worksheet.py`, `run_kappa_calibration.py` | judge calibration |
+| `compare_runs.py` | paired McNemar between two scored runs |
+| `held_out/` | articles physically removed from the corpus to make negative cases true |
+| `runs/`, `_archive/` | generated outputs (git-ignored); retired cases kept for the trail |
+
+Retrieval itself lives in `retrieval/`, not here: eval measures retrieval, and the dependency runs
+one way. Corpus access (XML to text, sections, char offsets) lives in `common/`.
+
+**Three checks worth running after touching the eval set**, all fast:
+
+```
+python -m eval.verify_spans            # do gold spans resolve, and are they about the right variant
+python -m eval.check_gold_claims       # does a gold label assert numbers its spans don't contain
+python -m eval.verify_negative_cases   # are the negative cases still negative
+```
 
 ## find_coverage.py
 
@@ -66,14 +99,14 @@ to `hold_out_case.py`**, narrow the pair and re-run instead.
 
 One pair:
 ```
-python find_coverage.py --pair-id brca1_hboc --gene BRCA1 \
+python -m eval.find_coverage --pair-id brca1_hboc --gene BRCA1 \
     --condition "breast cancer" --condition "ovarian cancer" --condition HBOC
 ```
 
 Many pairs in one corpus pass, cheaper than looping the corpus once per pair since every article
 is parsed once and tested against all term sets (see `term_sets.example.csv` for the format):
 ```
-python find_coverage.py --term-sets-csv term_sets.example.csv
+python -m eval.find_coverage --term-sets-csv term_sets.example.csv
 ```
 
 Both write `coverage_candidates.csv` (override with `--out`): one row per `(pair_id, pmcid)`
@@ -86,7 +119,7 @@ CPU cores; `--workers` to override, default is `os.cpu_count()`).
 ### Test it
 
 ```
-python test_find_coverage.py
+python -m eval.tests.test_find_coverage
 ```
 
 Synthetic 5-article corpus built fresh per run, covers the word-boundary regex behavior
@@ -107,14 +140,14 @@ PMCIDs covering a narrow variant-condition pair, moves their XML out of `../corp
 negative case.
 
 ```
-python hold_out_case.py --pair-id palb2_pancreatic --gene PALB2 --condition "pancreatic cancer" \
+python -m eval.hold_out_case --pair-id palb2_pancreatic --gene PALB2 --condition "pancreatic cancer" \
     --pmcid PMC1234567 --pmcid PMC7654321
 
-python hold_out_case.py --list                              # see everything currently held out
-python hold_out_case.py --pair-id palb2_pancreatic --restore  # undo, fully reversible
+python -m eval.hold_out_case --list                              # see everything currently held out
+python -m eval.hold_out_case --pair-id palb2_pancreatic --restore  # undo, fully reversible
 ```
 
-Tests: `python test_hold_out_case.py` (19 assertions: hold-out, idempotency, cross-pair conflict,
+Tests: `python -m eval.tests.test_hold_out_case` (19 assertions: hold-out, idempotency, cross-pair conflict,
 a missing source file, restore, all via the real CLI).
 
 ## The eval case format
@@ -152,7 +185,7 @@ out (see the warning below, it should usually be far fewer than that template im
 **Gold spans get verified against the source, not trusted on sight.** A `gold_span`'s
 `char_start`/`char_end` is a claim, "this exact range supports this quote," and round-number
 offsets (`0:305`, `950:1450`) are the signature of a guess, not a measurement. Run
-`python verify_spans.py [--fix]` after adding any case whose `disagreement_note` quotes a source:
+`python -m eval.verify_spans [--fix]` after adding any case whose `disagreement_note` quotes a source:
 it searches the real article text for each quoted phrase (tolerant of whitespace and curly-quote
 drift, falling back to individual sentences if the whole quote doesn't match byte-exact) and
 rewrites the offsets to where the quote actually is, widened to the containing paragraph. A span
@@ -205,7 +238,7 @@ using the fake judge.
 ### Usage
 
 ```
-python score.py --answers runs/no_retrieval_answers.jsonl --judge groq --out runs/no_retrieval_scores.json
+python -m eval.score --answers runs/no_retrieval_answers.jsonl --judge groq --out runs/no_retrieval_scores.json
 ```
 
 Prints each property's `n` / pass / partial / fail / pass_rate, N/A cases excluded from `n` rather
@@ -223,7 +256,7 @@ how much of that is memorization" question `PROJECT_PLAN.md` names explicitly. N
 alongside it.
 
 ```
-python baselines/no_retrieval.py --out runs/no_retrieval_answers.jsonl
+python -m eval.baselines.no_retrieval --out runs/no_retrieval_answers.jsonl
 ```
 
 ### bm25.py: hand-built retrieval for the second baseline
@@ -255,7 +288,7 @@ index, mapped back to real spans before scoring, same schema and scorer as `no_r
 per property on binary pass/not-pass (partial counts as not-pass):
 
 ```
-python compare_runs.py --a runs/no_retrieval_scores.json --b runs/bm25_only_scores.json \
+python -m eval.compare_runs --a runs/no_retrieval_scores.json --b runs/bm25_only_scores.json \
     --label-a no_retrieval --label-b bm25_only
 ```
 
@@ -279,8 +312,8 @@ stratified by type (disagreement/negative/ordinary) and seeded, so the held-out 
 accidentally all-one-type at small n:
 
 ```
-python split.py assign --seed 0   # one-shot; re-run later to place newly-added cases only
-python split.py list              # see assignments and the current touch count
+python -m eval.split assign --seed 0   # one-shot; re-run later to place newly-added cases only
+python -m eval.split list              # see assignments and the current touch count
 ```
 
 `score.py` defaults to `--held-out exclude` (dev split only, currently 13 of 19 cases), the safe
@@ -298,7 +331,7 @@ the mean, not scored 0 or 1, either of which would misreport a query no system c
 unjudged retrieved documents count as gain 0, the standard BEIR treatment. `evaluate()` returns
 every metric with its own CI and its own `n`, because those `n`s differ.
 
-Tests (`python test_ir_metrics.py`, 20 assertions) check the nDCG worked example against arithmetic
+Tests (`python -m retrieval.tests.test_ir_metrics`, 20 assertions) check the nDCG worked example against arithmetic
 written out by hand in the test docstring, not against another implementation's output. A test that
 asserts "matches whatever the library said" would defend nothing, which is the point of hand-writing
 the module at all.
@@ -312,8 +345,8 @@ Pyserini BM25 reference and against a bug threshold (60% of reference) registere
 `docs/DECISION_LOG.md` before the first run.
 
 ```
-python run_benchmark.py --dataset scifact --out ../runs/scifact_bm25.json
-python run_benchmark.py --dataset nfcorpus --limit-queries 20   # smoke test, refuses to write output
+python -m eval.benchmarks.run_benchmark --dataset scifact --out ../runs/scifact_bm25.json
+python -m eval.benchmarks.run_benchmark --dataset nfcorpus --limit-queries 20   # smoke test, refuses to write output
 ```
 
 Both datasets run in a few seconds. Result (2026-09-03): nDCG@10 at 89-90% of the published
@@ -328,9 +361,9 @@ underneath it, **is the gold label right at all**. Every case in `answer_cases.j
 were grading against unchecked ground truth.
 
 ```
-python make_case_worksheet.py --n 8 --seed 0 --out case_worksheet.md
+python -m eval.make_case_worksheet --n 8 --seed 0 --out case_worksheet.md
 # a person fills in the verdict/why lines
-python make_case_worksheet.py --summarize case_worksheet.md
+python -m eval.make_case_worksheet --summarize case_worksheet.md
 ```
 
 Samples stratified by case type (taking at least one of each before filling up, so a small `n`
@@ -360,8 +393,8 @@ up. `brca_prs_ovarian_risk_ord_001`'s other defect, attributing a BRCA2-only fin
 genes, involves no numbers and this cannot see it.
 
 ```
-python check_gold_claims.py
-python check_gold_claims.py --case-id brca_prs_ovarian_risk_ord_001
+python -m eval.check_gold_claims
+python -m eval.check_gold_claims --case-id brca_prs_ovarian_risk_ord_001
 ```
 
 ### verify_negative_cases.py: are the negative cases still negative?
@@ -378,7 +411,7 @@ and gone from the corpus, and the case is marked `construction: hold_out` at all
 over the full corpus.
 
 ```
-python verify_negative_cases.py
+python -m eval.verify_negative_cases
 ```
 
 It cannot prove no article discusses the same variant under a different name; no keyword method
@@ -392,8 +425,8 @@ claim is reproducible rather than asserted. Scans every paragraph that mentions 
 out HGVS notations, and reports those appearing in at most `--max-df` articles.
 
 ```
-python mine_rare_variants.py --max-df 1
-python mine_rare_variants.py --max-df 2 --condition "ovarian cancer" --out candidates.csv
+python -m eval.mine_rare_variants --max-df 1
+python -m eval.mine_rare_variants --max-df 2 --condition "ovarian cancer" --out candidates.csv
 ```
 
 **The `gene?` column is a hint, not a finding.** The first version of this script assigned each
@@ -410,13 +443,13 @@ back low, the rubric is underspecified, not the judge." This is the one M1 step 
 by a real person, not built or faked, an LLM judge grading its own calibration would defeat the
 entire point. The workflow:
 
-1. `python make_kappa_worksheet.py --answers runs/bm25_only_answers.jsonl --out kappa_worksheet.md`
+1. `python -m eval.make_kappa_worksheet --answers runs/bm25_only_answers.jsonl --out kappa_worksheet.md`
    generates a blind worksheet (dev split only, by default): each case's query, gold label, the
    system's answer, and every cited claim resolved to its real source text, so groundedness is
    checkable by reading the actual span. The judge's own verdict is never shown anywhere in it.
 2. A human fills in the `___` blanks with their own pass/partial/fail per property, same rubric the
    judge used.
-3. `python run_kappa_calibration.py --worksheet kappa_worksheet.md --judge-scores runs/bm25_only_scores.json`
+3. `python -m eval.run_kappa_calibration --worksheet kappa_worksheet.md --judge-scores runs/bm25_only_scores.json`
    parses the filled-in verdicts, pairs them against the judge's stored verdicts for the same
    case/property, and reports both unweighted and linearly-weighted Cohen's kappa (`kappa.py`,
    hand-built, weighted because the rubric's pass/partial/fail scale is ordinal, a pass-vs-partial

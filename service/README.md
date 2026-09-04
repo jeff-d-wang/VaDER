@@ -20,8 +20,7 @@ forward.
 
 ```
 pip install -r requirements.txt
-cd service
-uvicorn app:app --host 0.0.0.0 --port 8000
+uvicorn service.app:app --host 0.0.0.0 --port 8000
 ```
 
 By default it reads the corpus from `../corpus` (the Step 0b pull). Override with
@@ -45,7 +44,7 @@ found (this is what makes TTFT meaningful), a `"not_found"` line if none were, t
 ## Test it
 
 ```
-python test_app.py
+python -m service.test_app
 ```
 
 Builds a tiny synthetic corpus per test in a temp dir, so it never touches `../corpus` and stays
@@ -60,8 +59,8 @@ requests against the live server, reporting p50/p95 total latency and p50/p95 TT
 percentile-bootstrap 95% CI, per `RESULTS.md`'s rule that a number needs an interval and an `n`.
 
 ```
-uvicorn app:app --port 8000 &
-python loadtest.py --base-url http://127.0.0.1:8000 --n 150 --concurrency 20
+uvicorn service.app:app --port 8000 &
+python -m service.loadtest --base-url http://127.0.0.1:8000 --n 150 --concurrency 20
 ```
 
 `--seed` controls both which of the 10 built-in sample queries get sent and the bootstrap

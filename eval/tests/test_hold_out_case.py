@@ -3,7 +3,7 @@ Tests for hold_out_case.py. Builds a tiny synthetic corpus per run in a temp
 dir, exercises hold-out, idempotency, cross-pair conflict, missing-file
 handling, and restore, all via the real CLI (subprocess). Run:
 
-    python test_hold_out_case.py
+    python -m eval.tests.test_hold_out_case
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 import tempfile
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]  # repo root: CLIs run as "python -m eval.<mod>"
 
 
 def _write_corpus(tmp: Path, pmcids: list) -> Path:
@@ -25,8 +26,8 @@ def _write_corpus(tmp: Path, pmcids: list) -> Path:
 
 
 def run(args: list) -> subprocess.CompletedProcess:
-    cmd = [sys.executable, str(HERE / "hold_out_case.py")] + args
-    return subprocess.run(cmd, capture_output=True, text=True, cwd=str(HERE))
+    cmd = [sys.executable, "-m", "eval.hold_out_case"] + args
+    return subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT))
 
 
 def run_tests():

@@ -1,17 +1,17 @@
 """
 Tests for the benchmark loader module. Converted from a pytest-based suite
 during review (2026-09-01): this project's other test files are stdlib-only,
-`python test_x.py`, no test framework dependency, so this one now matches.
+`python -m <pkg>.tests.test_x`, no test framework dependency, so this one now matches.
 Run:
 
-    python test_loader.py
+    python -m eval.benchmarks.test_loader
 """
 import json
 import sys
 import tempfile
 from pathlib import Path
 
-from loader import load_benchmark, load_corpus, load_qrels, load_queries
+from eval.benchmarks.loader import load_benchmark, load_corpus, load_qrels, load_queries
 
 
 def _make_temp_dataset(base_dir: Path, name: str) -> Path:

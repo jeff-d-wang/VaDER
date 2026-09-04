@@ -1,6 +1,6 @@
 """Benchmark datasets for evaluation."""
 
-from loader import (
+from eval.benchmarks.loader import (
     BenchmarkDataset,
     Document,
     Judgment,

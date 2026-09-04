@@ -2,7 +2,7 @@
 Tests for make_case_worksheet.py. Stdlib only, same convention as every
 other test file in this project (no pytest).
 
-    python test_make_case_worksheet.py
+    python -m eval.tests.test_make_case_worksheet
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import make_case_worksheet as mcw
+import eval.make_case_worksheet as mcw
 
 _ABSTRACT = (
     "Carriers of the variant showed a markedly increased risk of disease in this cohort, "

@@ -28,9 +28,9 @@ is not a scoring touch, but it is still exposure, and there is no reason to
 spend it here.
 
 Usage:
-    python make_case_worksheet.py --n 8 --out case_worksheet.md
+    python -m eval.make_case_worksheet --n 8 --out case_worksheet.md
     # ... a human fills in the verdict lines ...
-    python make_case_worksheet.py --summarize case_worksheet.md
+    python -m eval.make_case_worksheet --summarize case_worksheet.md
 """
 from __future__ import annotations
 
@@ -41,10 +41,10 @@ import re
 import sys
 from pathlib import Path
 
-from corpus_text import load_span_text
-from split import load_split
+from common.corpus_text import load_span_text
+from eval.split import load_split
 
-CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
+CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
 XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
 
 VERDICTS = ("valid", "wrong", "unsure")
@@ -192,7 +192,7 @@ def render_worksheet(cases: list[dict], xml_dir: Path, seed: int) -> str:
         "Fill in the two `___` lines at the end of each case, then run:",
         "",
         "```",
-        "python make_case_worksheet.py --summarize case_worksheet.md",
+        "python -m eval.make_case_worksheet --summarize case_worksheet.md",
         "```",
         "",
         "---",

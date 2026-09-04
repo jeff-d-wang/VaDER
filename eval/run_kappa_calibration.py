@@ -11,7 +11,7 @@ treated as not-yet-answered and excluded from the comparison (not
 silently scored as a disagreement).
 
 Usage:
-    python run_kappa_calibration.py --worksheet kappa_worksheet_filled.md \
+    python -m eval.run_kappa_calibration --worksheet kappa_worksheet_filled.md \
         --judge-scores runs/bm25_only_scores.json
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-from kappa import kappa_report
+from eval.kappa import kappa_report
 
 _PROPERTY_ALIASES = {
     "says_not_found": "not_found",

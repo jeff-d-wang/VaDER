@@ -24,7 +24,7 @@ and grades them. See eval/README.md for the schema and how to produce one
 (eval/baselines/no_retrieval.py is the first such generator).
 
 Usage:
-    python score.py --answers path/to/answers.jsonl --judge fake|groq [--out results.json]
+    python -m eval.score --answers path/to/answers.jsonl --judge fake|groq [--out results.json]
 """
 from __future__ import annotations
 
@@ -36,11 +36,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-from corpus_text import load_span_text
-from judge import Judge, JudgeResult, make_judge
-from split import load_split, record_touch, MAX_RECOMMENDED_TOUCHES
+from common.corpus_text import load_span_text
+from eval.judge import Judge, JudgeResult, make_judge
+from eval.split import load_split, record_touch, MAX_RECOMMENDED_TOUCHES
 
-CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
+CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
 XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
 
 REFUSAL_MARKERS = (

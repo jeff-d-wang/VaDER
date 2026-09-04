@@ -1328,3 +1328,63 @@ Phases, each ending in a number. Full statement in `PROJECT_PLAN.md`, "Tier 1 ex
   4. A standing lesson for this project's own numbers: the strongest-sounding result in the repo
      was the one that did not survive contact with a validated eval set. Effect size and
      interestingness are not evidence.
+
+---
+
+## Design decision: package layout, retrieval split out of eval
+
+- **Date / module:** repo-wide (2026-09-04), after the phase A1 work landed.
+- **What prompted it:** `eval/` had reached 40 files at its top level (19 modules, 16 test files,
+  5 data files) plus 6 subdirectories, with the tests interleaved alphabetically among the modules
+  they test. It had also quietly become the home for things that are not evaluation: the BM25
+  implementation, the IR metrics, and the corpus XML reader.
+- **Decision:** three packages with a one-way dependency, `common <- retrieval <- eval`, and
+  everything run as a module from the repo root.
+
+  | Package | Holds | Depends on |
+  |---|---|---|
+  | `common/` | `corpus_text.py`: JATS XML to text, sections, the char-offset convention | nothing |
+  | `retrieval/` | `bm25.py`, `ir_metrics.py`, `tests/` | `common` |
+  | `eval/` | the harness: scorer, judge, baselines, case tooling, `data/`, `tests/` | `retrieval`, `common` |
+
+  `ingestion/` and `service/` became packages too, for consistency and because `service/` will
+  import `retrieval` in phase E.
+- **Why retrieval leaves eval, which is the only interesting part of this:** the dependency
+  direction is real and was invisible while BM25 lived under `eval/`. **Evaluation measures
+  retrieval; retrieval does not know evaluation exists.** That boundary stops being cosmetic in
+  phase D, when the chunker, embedder, hybrid fusion and reranker land, and in phase E, when
+  `service/` imports the retriever to answer real requests. A service that has to import the
+  evaluation harness to answer a query has the arrows pointing the wrong way.
+- **Alternatives considered:**
+  - *Move only tests and data into subfolders, leave modules flat.* Lowest risk and no import
+    changes, but leaves 19 ungrouped modules and leaves retrieval filed under evaluation, which
+    is the part that would have cost something later.
+  - *Subpackages inside `eval/` (`caseset/`, `scoring/`, `retrieval/`, `common/`).* Most organized
+    within `eval/`, but every module gains path-shim boilerplate and it still files retrieval
+    under evaluation.
+- **Why `python -m` from the repo root rather than scripts run in place:** the old layout needed
+  `sys.path.insert(0, ...)` shims in `baselines/` and `benchmarks/` to reach across directories,
+  and several tools only worked from a particular working directory. Running as modules deletes
+  every shim (there are now none in the codebase) and makes behaviour independent of where you
+  are standing. It costs a changed command line in every README, which is a one-time edit.
+- **Verification, because a rename-only change is exactly where silent breakage hides:** all 19
+  test modules pass, every CLI was re-run against the real corpus (`verify_spans`,
+  `check_gold_claims`, `verify_negative_cases`, `split list`, `hold_out_case --list`, a SciFact
+  benchmark run), and `compileall` is clean. Two bugs surfaced during the move and were fixed: an
+  import shielded by a trailing `# noqa: E402` escaped the rewrite, and two subprocess-based tests
+  were still invoking CLIs by file path from the wrong directory. Added `run_tests.py` at the repo
+  root, which runs every test module by exit code, because the suite mixes `unittest` classes with
+  hand-rolled `check()` scripts and `unittest discover` only sees half of them.
+- **Path map for reading older entries in this log.** Entries above this one reference the
+  pre-move paths and are left as written, since they were true when written:
+
+  | Was | Now |
+  |---|---|
+  | `eval/corpus_text.py` | `common/corpus_text.py` |
+  | `eval/bm25.py`, `eval/ir_metrics.py` | `retrieval/` |
+  | `eval/answer_cases.jsonl`, `eval/dev_held_out_split.csv` | `eval/data/` |
+  | `eval/test_*.py` | `eval/tests/`, or `retrieval/tests/` for bm25 and ir_metrics |
+  | `python score.py ...` | `python -m eval.score ...` |
+
+- **Reversibility:** cheap in principle (the moves are renames and the import rewrite was
+  mechanical), but there is no reason to: nothing about the old layout was load-bearing.

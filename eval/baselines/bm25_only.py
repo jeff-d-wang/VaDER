@@ -12,11 +12,11 @@ scorer as no_retrieval.py, the only thing that changes is whether real
 corpus text was in the prompt.
 
 Needs GROQ_API_KEY and a built index (see eval/README.md,
-`python bm25.py` is not a CLI; build via the one-liner in the README or
+`python -m retrieval.bm25` is not a CLI; build via the one-liner in the README or
 reuse eval/runs/bm25_index.pkl if already built).
 
 Usage:
-    python baselines/bm25_only.py --index runs/bm25_index.pkl --out runs/bm25_only_answers.jsonl
+    python -m eval.baselines.bm25_only --index runs/bm25_index.pkl --out runs/bm25_only_answers.jsonl
 """
 from __future__ import annotations
 
@@ -27,11 +27,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from bm25 import BM25Index  # noqa: E402
-from llm_client import DEFAULT_MODEL, groq_chat_json  # noqa: E402
+from retrieval.bm25 import BM25Index
+from eval.llm_client import DEFAULT_MODEL, groq_chat_json
 
-CASES_PATH = Path(__file__).parent.parent / "answer_cases.jsonl"
+CASES_PATH = Path(__file__).parent.parent / "data" / "answer_cases.jsonl"
 PROMPT_VERSION = "bm25_only_v1"
 TOP_K = 8
 

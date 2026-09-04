@@ -39,7 +39,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-import search as searchmod
+import service.search as searchmod
 
 # No `from __future__ import annotations` here (unlike the rest of this
 # project): FastAPI/pydantic resolve route and model annotations at runtime

@@ -33,7 +33,7 @@ regression check for any future script edit.
 2. **Install dependencies:** `pip install -r requirements.txt`
 3. **Smoke-test first, small:**
    ```
-   python pull_corpus.py --email you@actual-email.com --target-n 5
+   python -m ingestion.pull_corpus --email you@actual-email.com --target-n 5
    ```
    Check the printed esearch match count is non-zero (a zero means a query tag is wrong for the
    `pmc` database), then that `corpus/xml/` has real JATS XML and `corpus/manifest.csv` looks
@@ -41,7 +41,7 @@ regression check for any future script edit.
    differently from what the script assumes.
 4. **Run the real pull** once the smoke test looks right:
    ```
-   python pull_corpus.py --email you@actual-email.com --api-key YOUR_KEY --target-n 10000 --seed 0
+   python -m ingestion.pull_corpus --email you@actual-email.com --api-key YOUR_KEY --target-n 10000 --seed 0
    ```
    The default query anchors the gene and pathway terms (BRCA1/2, TP53, PALB2, ATM, CHEK2, DNA
    damage response, PARP inhibitor, HRD) to `[Title/Abstract]`, the disease side to
@@ -53,7 +53,7 @@ regression check for any future script edit.
 5. **Re-run the offline test suite** after any edit to the script, before trusting a new version
    at scale:
    ```
-   python test_pull_corpus.py
+   python -m ingestion.test_pull_corpus
    ```
 6. **When the real pull finishes**, log the exact query, the `--seed`, and the snapshot date/time
    from the printed `run_info.json` into `../docs/DECISION_LOG.md`. The script prints a

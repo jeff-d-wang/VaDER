@@ -27,9 +27,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-SPLIT_PATH = Path(__file__).parent / "dev_held_out_split.csv"
-TOUCHES_PATH = Path(__file__).parent / "held_out_touches.csv"
-CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
+SPLIT_PATH = Path(__file__).parent / "data" / "dev_held_out_split.csv"
+TOUCHES_PATH = Path(__file__).parent / "data" / "held_out_touches.csv"
+CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
 
 HELD_OUT_FRACTION = 1 / 3
 MAX_RECOMMENDED_TOUCHES = 3

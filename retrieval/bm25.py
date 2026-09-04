@@ -33,7 +33,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from corpus_text import extract_section_text
+from common.corpus_text import extract_section_text
 
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-.]*")  # keeps "c.1100delC", "BRCA1" etc. as one token
 
