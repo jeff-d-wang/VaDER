@@ -1,4 +1,4 @@
-"""Stdlib-only tests for split.py. Run directly: python test_split.py"""
+"""Stdlib-only tests for split.py. Run directly: python -m eval.tests.test_split"""
 from __future__ import annotations
 
 import csv
@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import split as split_mod
+import eval.split as split_mod
 
 _FAILURES: list[str] = []
 

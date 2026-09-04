@@ -1,7 +1,7 @@
 """
 Tests for check_gold_claims.py. Stdlib only, no pytest.
 
-    python test_check_gold_claims.py
+    python -m eval.tests.test_check_gold_claims
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import check_gold_claims as cgc
+import eval.check_gold_claims as cgc
 
 
 def _case(case_id="c1", direction="increased risk", strength="", variant=None,

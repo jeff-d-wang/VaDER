@@ -3,13 +3,13 @@ Tests for mine_rare_variants.py, concentrated on gene attribution, since
 that is where the first version of this script was wrong for 4 of 8
 checked candidates.
 
-    python test_mine_rare_variants.py
+    python -m eval.tests.test_mine_rare_variants
 """
 from __future__ import annotations
 
 import unittest
 
-import mine_rare_variants as mrv
+import eval.mine_rare_variants as mrv
 
 
 def _attribute(paragraph: str, variant: str):

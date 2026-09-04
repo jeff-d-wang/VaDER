@@ -92,7 +92,7 @@ sys.modules["boto3"] = fake_boto3
 sys.modules["botocore"] = fake_botocore
 sys.modules["botocore.config"] = fake_botocore_config
 
-import pull_corpus  # noqa: E402  (must import after the fake boto3 is registered)
+import ingestion.pull_corpus as pull_corpus  # noqa: E402  (must import after the fake boto3 is registered)
 
 
 # ---- Fake NCBI E-utilities responses ----

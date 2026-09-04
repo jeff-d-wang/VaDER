@@ -1,13 +1,13 @@
 """Stdlib-only tests for make_kappa_worksheet.py. Run directly:
-python test_make_kappa_worksheet.py"""
+python -m eval.tests.test_make_kappa_worksheet"""
 from __future__ import annotations
 
 import sys
 import tempfile
 from pathlib import Path
 
-from make_kappa_worksheet import format_case
-from score import Claim, SystemAnswer
+from eval.make_kappa_worksheet import format_case
+from eval.score import Claim, SystemAnswer
 
 _FAILURES: list[str] = []
 

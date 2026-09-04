@@ -1,5 +1,5 @@
 """Stdlib-only tests for score.py, using judge.FakeJudge (no network, no API
-key needed). Run directly: python test_score.py
+key needed). Run directly: python -m eval.tests.test_score
 
 These test the scorer's own branching logic (bucket thresholds, N/A
 handling, negative-case special-casing), not judgment quality: FakeJudge's
@@ -14,10 +14,10 @@ from pathlib import Path
 
 import json
 
-import score
-import split as split_mod
-from judge import FakeJudge
-from score import Claim, SystemAnswer, score_case, summarize, wilson_ci
+import eval.score as score
+import eval.split as split_mod
+from eval.judge import FakeJudge
+from eval.score import Claim, SystemAnswer, score_case, summarize, wilson_ci
 
 _FAILURES: list[str] = []
 

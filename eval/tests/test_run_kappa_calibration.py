@@ -1,10 +1,10 @@
 """Stdlib-only tests for run_kappa_calibration.py. Run directly:
-python test_run_kappa_calibration.py"""
+python -m eval.tests.test_run_kappa_calibration"""
 from __future__ import annotations
 
 import sys
 
-from run_kappa_calibration import parse_worksheet
+from eval.run_kappa_calibration import parse_worksheet
 
 _FAILURES: list[str] = []
 

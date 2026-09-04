@@ -26,12 +26,12 @@ categories. It reports two match strengths per article:
     same paragraph. Weaker signal; read it before you trust it.
 
 Usage, one pair:
-    python find_coverage.py --pair-id brca1_hboc --gene BRCA1 \\
+    python -m eval.find_coverage --pair-id brca1_hboc --gene BRCA1 \\
         --condition "breast cancer" --condition "ovarian cancer" --condition HBOC
 
 Usage, many pairs in one corpus pass (cheaper than looping the corpus once
 per pair -- every article is parsed once and tested against all term sets):
-    python find_coverage.py --term-sets-csv term_sets.example.csv
+    python -m eval.find_coverage --term-sets-csv term_sets.example.csv
 
 Both write a CSV of candidate rows (default ./coverage_candidates.csv), one
 row per (pair_id, pmcid) match, sorted strongest matches first.

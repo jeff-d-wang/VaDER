@@ -16,7 +16,7 @@ only if gold.has_disagreement, groundedness/direction skipped for negative
 cases, etc.) so the human labels exactly the same sub-questions.
 
 Usage:
-    python make_kappa_worksheet.py --answers runs/bm25_only_answers.jsonl --out kappa_worksheet.md
+    python -m eval.make_kappa_worksheet --answers runs/bm25_only_answers.jsonl --out kappa_worksheet.md
 """
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ import json
 import sys
 from pathlib import Path
 
-from corpus_text import load_span_text
-from score import CASES_PATH, XML_DIR, SystemAnswer, load_jsonl
-from split import load_split
+from common.corpus_text import load_span_text
+from eval.score import CASES_PATH, XML_DIR, SystemAnswer, load_jsonl
+from eval.split import load_split
 
 
 def format_case(case: dict, answer: SystemAnswer, xml_dir: Path) -> str:

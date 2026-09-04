@@ -7,15 +7,15 @@ than copied from another implementation, on purpose: the point of this
 module is to be a metric definition this project can defend line by line,
 and a test that asserts "matches whatever the library said" defends nothing.
 
-    python test_ir_metrics.py
+    python -m retrieval.tests.test_ir_metrics
 """
 from __future__ import annotations
 
 import math
 import unittest
 
-import ir_metrics as m
-from ir_metrics import QueryResult
+from retrieval import ir_metrics as m
+from retrieval.ir_metrics import QueryResult
 
 
 def _qr(retrieved, judgments, query_id="q1"):

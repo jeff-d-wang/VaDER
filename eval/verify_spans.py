@@ -21,8 +21,8 @@ NO_QUOTE_TO_VERIFY and left untouched; that's a real limitation, not a
 result, see the printed summary.
 
 Usage:
-    python verify_spans.py                 # report only
-    python verify_spans.py --fix           # rewrite answer_cases.jsonl in place
+    python -m eval.verify_spans                 # report only
+    python -m eval.verify_spans --fix           # rewrite answer_cases.jsonl in place
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ import re
 import sys
 from pathlib import Path
 
-from corpus_text import extract_section_text, find_quote
+from common.corpus_text import extract_section_text, find_quote
 
 
 def expand_to_paragraph(text: str, start: int, end: int) -> tuple[int, int]:
@@ -47,7 +47,7 @@ def expand_to_paragraph(text: str, start: int, end: int) -> tuple[int, int]:
     return para_start, para_end
 
 MIN_QUOTE_LEN = 15
-CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
+CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
 XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
 
 

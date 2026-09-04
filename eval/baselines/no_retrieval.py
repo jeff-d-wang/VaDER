@@ -20,7 +20,7 @@ Needs GROQ_API_KEY (see eval/README.md). Writes one JSON object per case to
 git SHA so the run is attributable per CLAUDE.md's RESULTS.md rule.
 
 Usage:
-    python baselines/no_retrieval.py --out runs/no_retrieval_answers.jsonl
+    python -m eval.baselines.no_retrieval --out runs/no_retrieval_answers.jsonl
 """
 from __future__ import annotations
 
@@ -31,10 +31,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from llm_client import DEFAULT_MODEL, groq_chat_json  # noqa: E402
+from eval.llm_client import DEFAULT_MODEL, groq_chat_json
 
-CASES_PATH = Path(__file__).parent.parent / "answer_cases.jsonl"
+CASES_PATH = Path(__file__).parent.parent / "data" / "answer_cases.jsonl"
 
 PROMPT_VERSION = "no_retrieval_v1"
 

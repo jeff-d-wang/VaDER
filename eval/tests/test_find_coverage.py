@@ -4,7 +4,7 @@ dir, exercises the CLI end to end via subprocess (single-pair and batch
 modes, so the multiprocessing path is exercised for real), and unit-tests
 the term-matching regex directly. Run:
 
-    python test_find_coverage.py
+    python -m eval.tests.test_find_coverage
 """
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from find_coverage import _or_pattern
+from eval.find_coverage import _or_pattern
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]  # repo root: CLIs run as "python -m eval.<mod>"
 
 ARTICLES = {
     "PMC2000001": {
@@ -101,9 +102,9 @@ def _write_corpus(tmp: Path) -> tuple:
 def run_cli(tmp: Path, extra_args: list) -> tuple:
     _write_corpus(tmp)
     out = tmp / "out.csv"
-    cmd = ([sys.executable, str(HERE / "find_coverage.py"),
+    cmd = ([sys.executable, "-m", "eval.find_coverage",
             "--corpus-dir", str(tmp), "--workers", "2", "--out", str(out)] + extra_args)
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(HERE))
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT))
     return result, out
 
 

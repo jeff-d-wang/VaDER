@@ -164,7 +164,7 @@ relevant_docs = dataset.get_relevant_docs("1")
 The datasets are pre-downloaded and normalized in the subdirectories. To re-download from scratch:
 
 ```bash
-python download_datasets.py
+python -m eval.benchmarks.download_datasets
 ```
 
 This script uses the `ir_datasets` library to fetch from the BEIR mirrors. It requires:

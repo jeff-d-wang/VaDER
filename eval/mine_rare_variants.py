@@ -32,8 +32,8 @@ weak match is visible. **It is still a hint, not a finding.** Confirm every
 candidate by reading the source before building a case on it.
 
 Usage (from eval/):
-    python mine_rare_variants.py --max-df 1
-    python mine_rare_variants.py --max-df 2 --condition "ovarian cancer"
+    python -m eval.mine_rare_variants --max-df 1
+    python -m eval.mine_rare_variants --max-df 2 --condition "ovarian cancer"
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ from collections import defaultdict
 from multiprocessing import Pool
 from pathlib import Path
 
-from corpus_text import extract_section_text
+from common.corpus_text import extract_section_text
 
 EVAL_DIR = Path(__file__).parent
 XML_DIR = EVAL_DIR.parent / "corpus" / "xml"

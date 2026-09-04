@@ -17,7 +17,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app import create_app
+from service.app import create_app
 
 ARTICLES = {
     "PMC1000001": {
@@ -148,7 +148,7 @@ def run_tests():
         with tempfile.TemporaryDirectory() as empty_dir:
             empty = Path(empty_dir)
             (empty / "logs").mkdir()
-            from app import create_app as _create_app
+            from service.app import create_app as _create_app
             app = _create_app(manifest_path=empty / "manifest.csv", xml_dir=empty / "xml",
                                log_path=empty / "logs" / "requests.jsonl")
             with TestClient(app) as client:

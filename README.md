@@ -41,7 +41,29 @@ I want to do a production-esque AI engineering project that covers issues outsid
 ## Layout
 
 ```
-docs/         Project plan, decisions, results, and reference material
+common/       Corpus access: JATS XML to text, sections, and the char-offset
+              convention that gold spans and citations are both expressed in
+retrieval/    Retrieval and the metrics that score it (hand-built BM25, recall@k,
+              nDCG, MRR). Depends on common; does not know eval exists
+eval/         The evaluation harness: eval set, scorer, judge, baselines,
+              gold-label validation tooling. Depends on retrieval and common
 ingestion/    Corpus pull: PMC Open Access full text via E-utilities and S3
-service/      Step 0c: FastAPI measurement surface (stub handler, see docs/DECISION_LOG.md)
+service/      FastAPI measurement surface: the real HTTP path every latency
+              number is measured against (still a stub handler)
+docs/         Decisions and results
+corpus/       The Step 0b snapshot: manifest and per-file hashes (XML git-ignored)
 ```
+
+Everything runs as a module from the repo root, so there are no `sys.path` shims and no
+dependence on which directory you happen to be in:
+
+```
+python run_tests.py                                    # every test module, 19 of them
+python -m eval.score --answers runs/x.jsonl --judge groq
+python -m eval.benchmarks.run_benchmark --dataset scifact
+uvicorn service.app:app --port 8000
+```
+
+The dependency direction is deliberate and one-way: `common` <- `retrieval` <- `eval`. Evaluation
+measures retrieval; retrieval does not know evaluation exists. That matters once `service/` starts
+importing the retriever to answer real requests, which is the point of phase E.

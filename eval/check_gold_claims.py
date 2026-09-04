@@ -29,8 +29,8 @@ this script cannot see it. Numeric drift is the cheap half of citation
 drift, not the whole of it.
 
 Usage:
-    python check_gold_claims.py                  # all cases
-    python check_gold_claims.py --case-id foo    # one case
+    python -m eval.check_gold_claims                  # all cases
+    python -m eval.check_gold_claims --case-id foo    # one case
 """
 from __future__ import annotations
 
@@ -40,9 +40,9 @@ import re
 import sys
 from pathlib import Path
 
-from corpus_text import load_span_text
+from common.corpus_text import load_span_text
 
-CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
+CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
 XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
 
 # Digits separated by a comma, ordinary space, non-breaking space, thin

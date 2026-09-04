@@ -13,7 +13,7 @@ right test, not a proxy for a two-sample test that assumes independence
 the paired design specifically avoids needing.
 
 Usage:
-    python compare_runs.py --a runs/no_retrieval_scores.json --b runs/bm25_only_scores.json \
+    python -m eval.compare_runs --a runs/no_retrieval_scores.json --b runs/bm25_only_scores.json \
         --label-a no_retrieval --label-b bm25_only
 """
 from __future__ import annotations

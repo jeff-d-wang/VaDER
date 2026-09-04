@@ -18,12 +18,12 @@ A PMCID already held out under a DIFFERENT pair_id is refused, one held-out
 article should have one owning negative case, not an ambiguous shared one.
 
 Usage:
-    python hold_out_case.py --pair-id palb2_pancreatic --gene PALB2 \\
+    python -m eval.hold_out_case --pair-id palb2_pancreatic --gene PALB2 \\
         --condition "pancreatic cancer" --pmcid PMC1234567 --pmcid PMC7654321
 
-    python hold_out_case.py --restore --pair-id palb2_pancreatic
+    python -m eval.hold_out_case --restore --pair-id palb2_pancreatic
 
-    python hold_out_case.py --list
+    python -m eval.hold_out_case --list
 """
 from __future__ import annotations
 
@@ -122,8 +122,8 @@ def list_held_out(held_out_dir: Path) -> None:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--corpus-dir", default=os.environ.get("VADER_CORPUS_DIR", "../corpus"))
-    ap.add_argument("--held-out-dir", default="./held_out")
+    ap.add_argument("--corpus-dir", default=os.environ.get("VADER_CORPUS_DIR", str(Path(__file__).parent.parent / "corpus")))
+    ap.add_argument("--held-out-dir", default=str(Path(__file__).parent / "held_out"))
     ap.add_argument("--pair-id", help="an id for this negative case, e.g. palb2_pancreatic")
     ap.add_argument("--pmcid", action="append", default=[], help="repeatable: a PMCID to hold out")
     ap.add_argument("--gene", default="")

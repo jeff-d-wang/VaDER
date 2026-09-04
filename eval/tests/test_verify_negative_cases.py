@@ -5,7 +5,7 @@ Builds a synthetic corpus and manifest per test and points the module's
 path constants at it, so nothing here touches the real 7,857-article corpus
 or the real held-out registry.
 
-    python test_verify_negative_cases.py
+    python -m eval.tests.test_verify_negative_cases
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-import verify_negative_cases as vnc
+import eval.verify_negative_cases as vnc
 
 
 def _negative_case(case_id="neg1", variant="c.9275A>G", pmcid="PMC1",

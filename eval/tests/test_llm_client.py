@@ -1,5 +1,5 @@
 """Stdlib-only tests for llm_client.py's .env loading and key-checking.
-Never makes a real network call. Run directly: python test_llm_client.py
+Never makes a real network call. Run directly: python -m eval.tests.test_llm_client
 """
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import llm_client
+import eval.llm_client as llm_client
 
 _FAILURES: list[str] = []
 

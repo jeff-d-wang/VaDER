@@ -1,13 +1,13 @@
 """Stdlib-only tests for kappa.py. Every expected value below was hand-
 derived from the Cohen's kappa formula (po, pe, (po-pe)/(1-pe)), then cross-
 checked against the function's own output, not copied from an external
-reference. Run directly: python test_kappa.py"""
+reference. Run directly: python -m eval.tests.test_kappa"""
 from __future__ import annotations
 
 import math
 import sys
 
-from kappa import cohens_kappa, interpret, kappa_report
+from eval.kappa import cohens_kappa, interpret, kappa_report
 
 _FAILURES: list[str] = []
 

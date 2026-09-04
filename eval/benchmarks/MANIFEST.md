@@ -20,7 +20,7 @@ Both datasets are downloaded from the BEIR benchmark collection via `ir_datasets
   - 12,334 relevance judgments (graded: 0-2, interpreted as binary)
   - Avg relevant per query: 38.2
 
-Both datasets can be re-downloaded with `python download_datasets.py`.
+Both datasets can be re-downloaded with `python -m eval.benchmarks.download_datasets`.
 
 ### Code Files (committed)
 
@@ -32,7 +32,7 @@ Both datasets can be re-downloaded with `python download_datasets.py`.
 - **test_loader.py**: Test suite covering:
   - Corpus/query/qrel loading
   - Data structure validation
-  - Real dataset verification (run with `python test_loader.py`, stdlib-only, no pytest)
+  - Real dataset verification (run with `python -m eval.benchmarks.test_loader`, stdlib-only, no pytest)
 
 - **download_datasets.py**: Standalone script to fetch and normalize datasets from BEIR
 

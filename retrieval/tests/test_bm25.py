@@ -1,11 +1,11 @@
-"""Stdlib-only tests for bm25.py. Run directly: python test_bm25.py"""
+"""Stdlib-only tests for bm25.py. Run directly: python -m retrieval.tests.test_bm25"""
 from __future__ import annotations
 
 import sys
 import tempfile
 from pathlib import Path
 
-from bm25 import BM25Index, build_index, iter_paragraphs, tokenize
+from retrieval.bm25 import BM25Index, build_index, iter_paragraphs, tokenize
 
 _FAILURES: list[str] = []
 
