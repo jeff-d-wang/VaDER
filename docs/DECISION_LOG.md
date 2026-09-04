@@ -894,3 +894,437 @@ They're here to show the shape, not to stay as clutter.
   against a domain expert." That is a true, defensible, incomplete answer, not nothing.
 - **Reversibility:** Free to revisit. Nothing was discarded, the tooling and the corrected
   worksheet mechanism are both still there.
+---
+
+## Design decision: v4 plan audit, and a lean-v1 reordering of Tier 1
+
+- **Date / module:** Tier 1 planning revision (2026-09-03), logged before any of it is built.
+- **What prompted it:** a full re-read of `PROJECT_PLAN.md` (v3), `START_HERE.md`,
+  `TASK_CONTRACT.md`, `RESULTS.md`, this log, and the code as it stands. v3's module *content* is
+  not in dispute and is not being rewritten. What this entry changes is the **order** Tier 1 gets
+  executed in, and it records seven audit findings that drove the reorder.
+
+### The seven findings
+
+1. **The gold labels are entirely agent-authored and no person has read them.** All 19 cases in
+   `eval/answer_cases.jsonl` carry `created_by: agent:*`. The judge-vs-human kappa step was
+   skipped (entry above), and the one grading pass was Gemini against Groq. Every number in
+   `RESULTS.md` therefore rests on ground truth that has never met a human. `CLAUDE.md` names the
+   eval set and taxonomy as the intellectual core specifically to prevent this.
+2. **There is no system.** What has been measured is a script that calls BM25 and one LLM. The
+   FastAPI service still serves the Step 0c keyword stub. `CLAUDE.md`'s ordering rule is "eval
+   harness **and instrumentation spine**"; M1 is largely built, M2 is untouched, so M2 is the
+   actual gate on pipeline code, and it is the thing not being worked on.
+3. **The harness has never been validated against known-good labels.** SciFact and NFCorpus are
+   downloaded with a working loader and have never been run. There is no IR metric code in the
+   repo at all: no recall@k, no MRR, no nDCG. M1's own first instruction is to run the harness
+   against free labeled data before trusting it on your own.
+4. **Priorities inside M1 are inverted.** Growing the answer set from 19 toward 80 costs many
+   hours and still only detects large effects. The n>=300 retrieval set is what makes every later
+   ablation computable, and it does not exist. v3 lists both as M1 work as if they were equally
+   valuable. They are not.
+5. **A standing `RESULTS.md` rule is violated by every row subject to it.** It requires
+   `baseline/no_retrieval` to *always* be reported per date stratum. No row does.
+   `corpus/manifest.csv` already carries `pubdate` and 1,564 of 7,863 articles are 2025-2026, so a
+   real post-cutoff stratum exists and the fix is nearly free.
+6. **The repo's most interesting result is untested and one cheap experiment away.**
+   Direction/strength is 12.5% with and without retrieval, zero cases flipped. The unstarted third
+   M1 baseline (whole-document-in-context) is exactly the experiment that separates "retrieval did
+   not find it" from "the model cannot read it." It belongs *before* retrieval tuning: if reading
+   is the bottleneck, a better retriever buys nothing.
+7. **Smaller:** config hashes are ad-hoc sha256 of a string with no run registry; `README.md`
+   still says "Step 0, nearly done" while M1 is mostly complete.
+
+### The decision, in four parts (each confirmed with the user before logging)
+
+- **Eval-set trust:** a human validation pass on a stratified sample of 8 of the 19 cases, using a
+  generated worksheet showing query, gold direction/strength, and the gold span's real source
+  text. Marks each case valid / wrong / unsure. This is *case* validation, not judge calibration:
+  kappa measures the judge against a human, but if gold is wrong both sides are grading against
+  the wrong answer. Rejected: validating all 19 (~2h, more than the risk warrants at this stage);
+  skipping and logging the caveat (leaves every downstream number inheriting it).
+- **Retrieval eval set (n>=300):** hybrid construction. SciFact/NFCorpus validate the harness
+  against published BEIR BM25 numbers first. The domain set is then generated from sampled corpus
+  paragraphs, stratified by section type, each paragraph serving as its own gold span by
+  construction, filtered so the query is not answerable without that span, with a human spot-check
+  of about 20. **The known bias is lexical:** an LLM writing a query while looking at a paragraph
+  tends to reuse its wording, which inflates BM25 relative to dense retrieval, the exact
+  comparison M3 exists to make. Mitigated by a de-lexicalization pass and reported as a caveat on
+  every row that uses this set, not hidden. Rejected: hand-writing ~100 domain queries (best
+  labels, but n=100 detects roughly 8-point deltas, not 3, and costs many hours); BEIR-only (great
+  statistics, says nothing about this corpus, where chunking and identifier retrieval actually get
+  hard).
+- **Instrumentation depth (M2):** a hand-written span emitter writing JSONL, using OpenTelemetry
+  GenAI semantic-convention attribute names (`gen_ai.operation.name`, `gen_ai.usage.input_tokens`,
+  and so on) plus per-stage latency and cost. Gets M4's root-cause attribution and M10's stage
+  breakdown working in hours. The OTLP exporter and a self-hosted Phoenix/Langfuse backend are
+  deferred until there is traffic worth looking at. Rejected: full OTel SDK plus local Phoenix now,
+  a day or two of setup before a single retrieval number exists, against conventions that are
+  still Development-status and still moving.
+- **What counts as v1:** the **lean** definition. v1 is the existing BM25 path made into a real
+  system: structure-aware chunks with span provenance, served behind the FastAPI streaming
+  endpoint, traced, cost-accounted, scored on both eval sets, with real p95/TTFT/cost measured
+  against the contract's 6s / 1.5s / $0.05 targets. Dense embeddings, hybrid fusion, and reranking
+  then land **one at a time as measured upgrades with paired tests**. Rejected: building the full
+  hybrid + Qdrant + reranker stack before calling anything v1. That produces a better architecture
+  diagram and a worse project: the deltas arrive bundled and unattributable, and nothing is served
+  end to end for several sessions. Shipping lean and measuring each upgrade separately *is* the
+  method this project exists to practice.
+
+### The resulting execution order
+
+Phases, each ending in a number. Full statement in `PROJECT_PLAN.md`, "Tier 1 execution order (v4)".
+
+- **A. M1 closeout, cheap.** Case-validation worksheet (user); hand-written `eval/ir_metrics.py`
+  (recall@k, MRR, nDCG@10) run over SciFact/NFCorpus with the existing BM25 and checked against
+  published BEIR figures; whole-document-in-context baseline on the dev split; `pub_year` on every
+  case and per-stratum reporting of the no-retrieval baseline.
+- **B. M2 spine, the actual gate.** Config-as-code YAML plus hash; a run registry tying every
+  result to git SHA and config hash; the chunk schema carrying source-offset provenance and the
+  span-overlap hit function; per-request token/cost/latency accounting under semconv names.
+- **C. The n>=300 retrieval set**, per the construction decided above.
+- **D. v1 pipeline.** Structure-aware JATS chunker (hand-written), BM25 over chunks rather than
+  raw paragraphs, and the exact-identifier failure case (rsID / HGVS) constructed deliberately and
+  measured.
+- **E. Ship it.** Replace `service/search.py`'s stub with the real pipeline behind the same
+  streaming interface; re-run the load test; real p95/TTFT/cost against the contract targets, with
+  a stage breakdown from B's traces.
+- **F. M4 error analysis and the Tier 1 README.** Failure taxonomy hand-written with the user, per
+  `CLAUDE.md`. Tier 2's order then gets picked by the failure-bucket distribution rather than
+  pre-committed here.
+
+- **Reasoning:** the binding constraint on this project is not module coverage, it is that nothing
+  is yet end to end and nothing has been checked by a person. Both of those are fixed cheapest by
+  reordering, not by adding scope. The lean-v1 call in particular converts what looked like
+  missing features (no dense, no hybrid, no reranker) into the project's next four measured
+  experiments, which is worth more than having them silently present and unattributed.
+- **Reversibility:** free. This reorders v3's own modules and drops none of them. The one
+  genuinely hard-to-reverse item inside it is the chunk provenance schema in phase B, which is
+  exactly why it sits ahead of any pipeline code.
+
+---
+
+## Experiment: is the harness broken? BM25 against SciFact and NFCorpus
+
+- **Date / module:** M1 / phase A2 (2026-09-03). Logged before writing `eval/ir_metrics.py` or
+  running anything, per the standing rule.
+- **The question.** `PROJECT_PLAN.md` M1's first instruction is to run the harness against free
+  labeled data, because "running your harness against them tells you whether the harness is broken
+  before you trust it on your own data." SciFact and NFCorpus have been sitting downloaded in
+  `eval/benchmarks/` with a working loader since 2026-09-01 and have never been run. There is also
+  no IR metric code anywhere in this repo yet: no recall@k, no MRR, no nDCG. So this run builds
+  the metrics and validates both them and `eval/bm25.py` at the same time, against an external
+  reference that does not care what this project believes.
+- **The reference.** Pyserini/Anserini multi-field BM25 on the BEIR test splits, from Kamalloo et
+  al., "Resources for Brewing BEIR" (arXiv 2306.07471, Table 2), fetched and checked rather than
+  recalled: **SciFact nDCG@10 = 0.665, Recall@100 = 0.908; NFCorpus nDCG@10 = 0.325,
+  Recall@100 = 0.250.**
+- **Why an exact match is not the prediction.** Three differences from that reference, all known in
+  advance, all pushing the same direction (down):
+  1. *Parameters.* Lucene's defaults are `k1=0.9, b=0.4`; `eval/bm25.py` uses the textbook
+     `k1=1.5, b=0.75`, untuned.
+  2. *Analysis.* Lucene stems (Porter) and drops stopwords. `bm25.py` does neither: its tokenizer
+     is a regex that deliberately keeps `c.1100delC` and `BRCA1` intact as single tokens, which is
+     the right call for this project's own identifier-heavy corpus and the wrong call for
+     NFCorpus's health-and-nutrition prose, where stemming buys real recall.
+  3. *Fields.* The reference indexes title and body as separate equally-weighted fields; this run
+     concatenates them into one.
+- **Prediction (before running):** both land **below** the reference but in its neighborhood.
+  SciFact nDCG@10 in **[0.55, 0.70]**, point estimate ~0.62. NFCorpus nDCG@10 in **[0.25, 0.33]**,
+  point estimate ~0.29, with the shortfall larger on NFCorpus than SciFact because stemming helps
+  prose queries more than it helps claim-style ones. Recall@100 predicted near the reference on
+  SciFact (~0.85-0.91), since recall at depth 100 is far more forgiving of ranking-parameter
+  differences than nDCG@10 is.
+- **The failure threshold, stated in advance so it cannot be rationalized after:** if either
+  nDCG@10 comes in below **60% of its reference** (SciFact < 0.40, NFCorpus < 0.20), that is not a
+  parameter difference, it is a bug in the metric code or in `bm25.py`, and the domain numbers
+  already in `RESULTS.md` that depend on that retriever come under suspicion with it.
+- **Minimum detectable effect:** this is an absolute check against an external constant, not a
+  paired A/B, so the relevant resolution is the width of the CI on our own number. Bootstrapping
+  over queries at n=300 (SciFact) and n=323 (NFCorpus), with per-query nDCG@10 standard deviation
+  of roughly 0.4, gives a 95% CI half-width near **0.045**. So this run can tell "close to the
+  reference" apart from "broken," and can tell a 0.10 shortfall from a 0.30 one. It **cannot**
+  establish that our BM25 matches the reference exactly, and no conclusion of that shape should be
+  drawn from it.
+- **What this run is not.** It is not a claim that `bm25.py` is a good retriever, and not a number
+  that belongs in any comparison against the domain corpus. SciFact and NFCorpus documents are
+  abstracts; the domain index is paragraphs of full text. This checks the plumbing: metric
+  definitions, tokenization, the scoring loop, and the qrel join.
+- **Method:** hand-write `eval/ir_metrics.py` (recall@k, MRR, nDCG@k, plus a query-level bootstrap
+  CI), unit-test it against worked examples computed by hand, then run `eval/bm25.py` over each
+  benchmark corpus via the existing `eval/benchmarks/loader.py` and score against the qrels.
+  NFCorpus qrels are graded (11,758 at relevance 1, 576 at 2); nDCG uses the graded values, recall
+  and MRR treat any relevance > 0 as relevant.
+- **Result:** rows in `docs/RESULTS.md`, "Harness validation: BM25 on SciFact and NFCorpus."
+
+  | | ours | reference | delta | % of reference |
+  |---|---|---|---|---|
+  | SciFact nDCG@10 | 0.598 [0.550, 0.648] | 0.665 | -0.067 | 90% |
+  | SciFact Recall@100 | 0.825 [0.782, 0.867] | 0.908 | -0.083 | 91% |
+  | NFCorpus nDCG@10 | 0.288 [0.255, 0.321] | 0.325 | -0.037 | 89% |
+  | NFCorpus Recall@100 | 0.220 [0.192, 0.250] | 0.250 | -0.030 | 88% |
+
+  n=300 and n=323 queries. Nothing came near the 60%-of-reference bug threshold.
+- **Did the prediction hold?** Mostly, with one clean miss and one that was wrong for an
+  interesting reason.
+  - *Held:* both landed below the reference and in its neighborhood. SciFact nDCG@10 = 0.598 fell
+    inside the predicted [0.55, 0.70], about 0.02 below the predicted 0.62 point estimate.
+    NFCorpus nDCG@10 = 0.288 fell inside [0.25, 0.33], essentially on the predicted 0.29.
+  - *Missed:* SciFact Recall@100 = 0.825 came in below the predicted [0.85, 0.91]. The CI's upper
+    edge (0.867) reaches into that range, so this is a point estimate outside the prediction, not
+    a decisive refutation, but it is a miss and gets written as one. The reasoning behind that
+    sub-prediction, that deep recall is forgiving of ranking-parameter differences, was right in
+    direction (Recall@100 lost less relative ground than nDCG@10 on NFCorpus) and simply too
+    optimistic about the magnitude on SciFact.
+  - *Wrong:* the prediction that the shortfall would be **larger on NFCorpus than SciFact**,
+    reasoned from stemming helping prose queries more than claim-style ones. It was not. In
+    relative terms the two are indistinguishable (90% vs 89% of reference); in absolute terms the
+    shortfall was nearly twice as large on SciFact (-0.067 vs -0.037). Whatever the missing
+    stemming and stopword handling cost, it cost about the same proportion on both, which is
+    evidence the gap is dominated by the untuned `k1`/`b` and the single-field indexing rather
+    than by the analyzer. That is a testable claim and the cheap follow-up is obvious: re-run with
+    `k1=0.9, b=0.4` and see how much of the gap closes. Not doing that now, it is not on the
+    critical path to v1, but it is logged as a known cheap experiment.
+- **A finding worth keeping, separate from the validation:** NFCorpus MRR = 0.505 against
+  recall@10 = 0.135 on the identical ranking. Not a contradiction: at 38 relevant documents per
+  query, surfacing *one* of them high is easy and capturing a meaningful share of them in 10 slots
+  is arithmetically near-impossible. Either number reported alone misdescribes the retriever. This
+  is the concrete argument for `RESULTS.md`'s metric families being reported together, and it is a
+  better answer to "which retrieval metric do you use" than naming one.
+- **What changed because of this:**
+  1. **The harness is no longer unvalidated.** `PROJECT_PLAN.md` M1's first instruction is now
+     actually done, and the honest answer to its "how do you know your eval set is any good"
+     question gained a real clause: the metric code and the retriever reproduce published BM25
+     figures to within about 10% on two independent benchmarks with known answers.
+  2. **`eval/ir_metrics.py` exists**, hand-written and unit-tested against worked examples
+     computed by hand rather than against another implementation's output. This is the module
+     every retrieval number from phase C onward will be computed by, so validating it here, before
+     the domain retrieval set exists, is the whole point of the ordering.
+  3. **`eval/bm25.py` was refactored** to split `index_from_paragraphs` out of `build_index`, so
+     the benchmark run scores through the identical formula rather than a reimplementation that
+     could agree with the reference while the real one disagrees. `test_bm25.py` passes unchanged
+     across that refactor.
+  4. **A cheap follow-up is queued, not silently dropped:** re-run with Lucene's `k1=0.9, b=0.4`
+     to attribute the remaining gap between parameters and analysis.
+
+---
+
+## Experiment: phase A1 case validation, half the gold set is defective
+
+- **Date / module:** M1 / phase A1 (2026-09-04). The human validation pass decided in the v4 audit.
+- **Prediction (logged as the v4 audit's finding 1, before the worksheet was generated):** that an
+  entirely agent-authored, never-human-read gold set was "the project's largest open risk." No
+  numeric prediction was made, which in hindsight was a gap: a defect rate should have been
+  predicted. Recording that omission rather than back-filling a number.
+- **Minimum detectable effect:** n=8, so the CI on any rate is wide by construction (a 4/8 result
+  carries a 95% CI of roughly [0.22, 0.78]). This sample can establish *that* the set has a
+  serious problem. It cannot pin the rate, and no precise rate should be quoted from it.
+- **Method:** `eval/make_case_worksheet.py`, 8 dev-split cases stratified 2 disagreement / 2
+  negative / 4 ordinary, seed 0, each gold span rendered as full untruncated source text. Filled
+  in by the user. Every flagged case was then re-checked by pulling the article text directly, and
+  the two `unsure` negative cases were re-run through `find_coverage.py` with widened notation
+  sweeps.
+- **Result: 4 of 8 valid, 4 defective.** 50%, 95% CI [0.22, 0.78].
+
+  | Case | Verdict | Defect |
+  |---|---|---|
+  | `chek2_1100delc_prognosis_disagree_001` | valid | |
+  | `brca2_pancreatic_risk_ord_001` | valid | |
+  | `palb2_breast_risk_ord_001` | valid | |
+  | `atm_c2023c_t_breast_neg_001` | unsure -> **valid** | survived a widened sweep (p.Arg675Ter, R675X, Arg675 forms): still 0 matches |
+  | `atm_c7570g_c_risk_class_disagree_001` | **wrong** | gold span cites a paragraph about a *different variant* |
+  | `atm_at_lymphoid_tumor_ord_001` | **wrong** | gold `strength` asserts cohort figures (296 patients, 66 tumours, 47 lymphoid) absent from the cited span |
+  | `brca_prs_ovarian_risk_ord_001` | **wrong** | gold attributes the 6%/19% OC risk figures to BRCA1 *and* BRCA2; the source says "for BRCA2 carriers". Cohort sizes also outside the span |
+  | `palb2_c1592del4_pancreatic_neg_001` | unsure -> **invalid** | see below, the worst of the four |
+
+- **Did the prediction hold?** Yes, and the qualitative call in the v4 audit was correct: this was
+  the largest open risk and it was worth spending the sample on. Half.
+- **The failure mode has a shape, and it is not fabrication.** In all three "wrong" evidence cases
+  the article genuinely supports a corrected version of the case, and in two of the three the
+  missing facts are elsewhere in the *same abstract*, just outside the recorded span. The defect is
+  **citation drift**: a gold label asserting something more specific than, or subtly misattributed
+  relative to, the span recorded next to it. An agent reading a whole article, writing a
+  confident summary, then attaching an approximately-right span produces exactly this, and it is
+  invisible to any check that only asks whether the span resolves and is in range.
+- **`verify_spans.py` did not merely miss this. It caused one instance of it.**
+  `atm_c7570g_c_risk_class_disagree_001`'s note quoted "up to 60% lifetime breast cancer by the age
+  of 70 years." That phrase really is in PMC10092731, in a background paragraph about ATM
+  **c.7271T>G**. The quote search found it, `expand_to_paragraph` widened to that paragraph, and
+  `--fix` wrote the offsets in. Every step did its job. The script asked "does this quote exist in
+  this article" and never asked "is this span about the variant the case is about." A tool that
+  verifies existence and calls it verification will confidently cement a wrong span.
+  **Fixed the same day:** `subject_check()` now classifies every resolved span as `ok` (names the
+  variant) / `gene_only` (names the gene but not the variant, legitimate for a disagreement case's
+  general-risk contrast span, wrong for a variant-specific claim, needs a human) / `absent`
+  (names neither), `--fix` refuses to repoint into an `absent` span, and the three-way split
+  exists specifically because a strict variant requirement would false-positive on contrast spans.
+  Run over the real set it flags **exactly the case the human found, and nothing else** across the
+  other 17 spans. Regression-tested with the real c.7271T>G-vs-c.7570G>C text.
+- **The negative-case method is unsound, and this is the most important finding here.**
+  `palb2_c1592del4_pancreatic_neg_001` claims the corpus contains no grounding for PALB2
+  c.1592del4 + pancreatic cancer. Two things are wrong. First, `c.1592del4` is not standard HGVS
+  and appears to be garbled; the real Finnish founder variant is **c.1592delT** (p.Leu531Cysfs*30).
+  Second, searching the real notation finds **three articles discussing it alongside pancreatic
+  cancer in the same paragraph** (PMC3751431, PMC3291835, PMC5389658). The case asserts an absence
+  that is not there, and it "passed" its own construction check only because the notation searched
+  does not exist in the literature. A negative case built on a nonexistent notation is not a hard
+  test, it is a test that passes for the wrong reason.
+  The other 6 negative cases were re-swept with widened notations and none broke (the extra hits
+  were false positives: PTEN `R233X`, TP53 `I195`). That is reassurance, not a clean bill: for
+  three of them the protein-level identity was inferred rather than looked up, so those sweeps are
+  weaker than they look.
+  **The structural problem:** proving absence by keyword search is unbounded. Notation space is
+  open (cDNA, protein, rsID, legacy, genome coordinates) and prose descriptions ("the previously
+  reported truncating variant in exon 10") are uncatchable by any notation list. `eval/README.md`
+  already said a low match count is "suggestive, not proof," and the method was used as proof
+  anyway. `hold_out_case.py` exists to make absence true **by construction**: verify *presence*
+  (which search does reliably), then physically remove those articles. The negative-case builder
+  found zero matches, concluded no hold-out was needed, and thereby inverted the one piece of
+  logic that made the design sound.
+- **What changed because of this:**
+  1. `verify_spans.py` gained `subject_check()`, and `--fix` will now refuse rather than cement.
+  2. Every domain row in `docs/RESULTS.md` gets a contamination note: the two baselines and the
+     paired McNemar comparisons were graded against this set. See that file.
+  3. The remediation plan for the cases themselves is a separate decision, taken with the user
+     rather than applied unilaterally, since `CLAUDE.md` makes the eval set a discussion.
+  4. The `created_by: agent:*` provenance field earned its place. It is what made this sample
+     worth drawing, and the schema should keep `validated_by` / `validated_at_utc` next to it.
+
+---
+
+## Design decision: negative cases rebuilt by hold-out, not by failed search
+
+- **Date / module:** M1 / phase A1 remediation (2026-09-04). Follows directly from the validation
+  finding above; approach confirmed with the user before building.
+- **Decision:** retire all 7 remaining search-built negative cases and replace them with 6 built by
+  hold-out. The logic inverts: instead of searching for a variant, finding nothing, and asserting
+  absence, pick a variant the corpus demonstrably **does** contain, verify that presence (which
+  search does reliably), then physically remove the article. Absence becomes true by construction.
+- **Alternatives considered:**
+  - *Keep the 7, since they survived a widened notation sweep.* Rejected. They may each be fine,
+    but their validity rests on a method now known to be unsound, and for 3 of them the
+    protein-level notation was inferred rather than looked up, so the "widened" sweep was weaker
+    than it looked. Keeping them would mean the negative stratum's trustworthiness rests on an
+    argument the project has already refuted in writing.
+  - *Drop negative cases entirely.* Rejected. Property 4 produced the sharpest single result the
+    project has: no-retrieval fabricating a confident pathogenic classification for a variant the
+    corpus does not contain.
+- **How the pairs were found, and why guessing did not work.** The first attempt used famous
+  founder variants, on the theory that a model most likely knows them from pretraining, which
+  makes the strongest memorization test. That fails on arithmetic: BRCA1 185delAG appears in 89
+  corpus articles, CHEK2 I157T in 70, BRCA2 6174delT in 73. Holding out 70-200 articles would
+  remove a large, topically central slice of the corpus and silently change every other
+  measurement in the project.
+  So instead: mine every HGVS notation in the corpus, count document frequency, and keep
+  notations appearing in exactly **one** article. Removing one article of 7,863 distorts nothing.
+  **The real tension, worth stating rather than hiding:** the variants best suited to hold-out are
+  rare, and a rare variant is one the model probably does not know either, which weakens the
+  memorization half of what property 4 tests. Hold-out buys certainty of absence at the cost of
+  some of the test's bite. That trade is worth making, because a case that is certainly valid and
+  somewhat easy beats a case that is possibly invalid and looks hard, but the cost is real and
+  these cases should not be described as a strong memorization test.
+- **The mining tool made the same error the eval set had, which is the most useful thing that
+  happened here.** It assigned each variant the nearest gene symbol in the paragraph. Reading the
+  source for the 8 shortlisted candidates showed **4 were misattributed**: `c.2502_2503insA` is
+  ATM, not BRCA2; `c.1919C>A` is PMS2, not PALB2; `c.5890A>G` is ATM, not BRCA1; `c.334C>T` is
+  RAD51D/BARD1, not BRCA1. Proximity is not attribution. That is precisely the defect class the
+  validation pass found in the hand-built cases, reproduced by a fresh tool within the hour, which
+  is decent evidence it is a property of the task rather than of one careless agent. Every
+  surviving case's gene attribution was read out of the source text by hand.
+- **The 6 cases**, each verified to appear in exactly 1 corpus article before hold-out and 0 after:
+
+  | Case | Gene | Variant | Condition | Held out |
+  |---|---|---|---|---|
+  | `brca1_c4484plus2t_c_prostate_neg_001` | BRCA1 | c.4484+2T>C | prostate | PMC12485378 |
+  | `brca2_c9275a_g_ovarian_neg_001` | BRCA2 | c.9275A>G | ovarian | PMC13223255 |
+  | `brca2_c8010g_c_prostate_neg_001` | BRCA2 | c.8010G>C | prostate | PMC12035019 |
+  | `atm_c2502_2503insa_endometrial_neg_001` | ATM | c.2502_2503insA | endometrial | PMC9885574 |
+  | `atm_c4777minus1g_c_pancreatic_neg_001` | ATM | c.4777-1G>C | pancreatic | PMC12295162 |
+  | `tp53_c826_827gc_at_ovarian_neg_001` | TP53 | c.826_827GC>AT | ovarian | PMC5983728 |
+
+- **Made re-checkable, which the old cases never were.** `eval/verify_negative_cases.py` rescans
+  the corpus for every negative case's notation, confirms zero hits, confirms the claimed
+  held-out article is in the registry and gone from the corpus, and **fails any case not built by
+  hold-out**. Runs in about 9 seconds over the full corpus. The old cases rested on an agent's
+  report of what it had searched; these rest on a check anyone can rerun.
+  Residual limitation, stated plainly: this cannot prove no article discusses the same variant
+  under a different name. No keyword method can. That is why hold-out, not search, is what makes
+  the case sound; the script is a regression guard on the construction, not a proof of absence.
+- **Corpus effect:** 7,863 to 7,857 articles (6 held out, all reversible via
+  `hold_out_case.py --restore`). `corpus/manifest.csv` is untouched, per its role as the immutable
+  Step 0b record. No held-out article is a gold-span source for any other case; checked before
+  removing.
+- **Case set is now 17** (4 disagreement, 7 ordinary, 6 negative), 12 dev / 5 held-out. Down from
+  19, and further from `PROJECT_PLAN.md`'s 50-80 target than before. That is the correct direction
+  anyway: the v4 audit already concluded that growing the answer set is a worse use of hours than
+  building the n>=300 retrieval set, and a smaller set that is actually right beats a larger one
+  that is half wrong.
+- **Reversibility:** the hold-outs are fully reversible. The retired cases are archived in
+  `eval/_archive/`, not deleted.
+
+---
+
+## Experiment: baselines re-run on the repaired case set; the direction finding does not survive
+
+- **Date / module:** M1 / phase A1 remediation (2026-09-04). Closes the loop on the two entries
+  above.
+- **Prediction (written before the run, after the repairs were applied):** groundedness would hold
+  up, since it is a large effect driven by a structural fact (no-retrieval has no spans to cite)
+  that no gold-label defect could manufacture. Direction was expected to move somewhat, since two
+  of the three repaired cases had gold that penalized correct answers, but the *shape* of the
+  finding, retrieval not helping direction, was expected to survive.
+- **Minimum detectable effect:** n=8 for direction, groundedness and disagreement; n=12 for
+  not_found. At n=8 a paired McNemar test needs roughly 6 discordant pairs all falling one way to
+  reach p<0.05. So this run can detect only very large, very consistent effects, and everything
+  else it produces is inconclusive by construction. Known before running, not discovered after.
+- **Method:** both baselines regenerated against the repaired 17-case set and scored on the 12-case
+  dev split, judge and judge-prompt version unchanged from 2026-09-03, BM25 index rebuilt over the
+  post-hold-out corpus (7,857 articles, 436,834 paragraphs). Only the gold labels and the
+  negative-case construction differ.
+- **Result:** rows in `RESULTS.md`, "Repaired-set rerun (12 dev cases), 2026-09-04."
+  - groundedness 0% to 75%, paired delta +75pp, 6 of 8 cases flipping to pass and none the other
+    way, **McNemar p=0.031**, up from p=0.062 on the defective set.
+  - direction 25% vs 37.5%, paired delta +12pp, **three cases flip** (two to BM25, one to
+    no-retrieval), McNemar p=1.000.
+  - disagreement 0% vs 67% (n=3, p=0.500). not_found 91.7% both, failing on different cases.
+- **Did the prediction hold?** Partially, and the half that failed is the important half.
+  - *Held:* groundedness survived and strengthened, for exactly the structural reason predicted.
+  - *Did not hold:* the direction finding's shape did not survive. The 2026-09-03 result was not
+    merely "no significant difference," it was **12.5% vs 12.5% with zero cases flipping either
+    direction**, which is a much stronger and more interesting observation, and it is the one
+    quoted in the README and the v4 audit as the project's most interesting result. On the
+    repaired set, three of eight cases flip. Zero-flips was partly an artifact of defective gold.
+  - What replaces it is weaker and honest: at n=8, this eval set cannot tell whether retrieval
+    helps direction. +12pp at p=1.000 is neither evidence of an effect nor evidence of its
+    absence. The earlier confident negative was over-read from a set that was too small *and*
+    partly wrong, and the smallness alone should have been enough to stop it being stated that
+    confidently. The MDE discipline exists to catch exactly this and it was not applied to that
+    claim when it was written.
+- **A second result worth as much as the first: repairing gold roughly doubled measured direction
+  quality on both baselines** (12.5% to 25%, and 12.5% to 37.5%). Two repaired cases had gold that
+  marked correct answers wrong: one asserted cohort figures absent from the cited span, one
+  attributed a BRCA2-only finding to both genes. The systems were being penalized for being right.
+  A defective eval set understated system quality by about half on this property. Worth
+  remembering next time a measured number here looks disappointing: check the ruler before
+  concluding anything about the thing being measured.
+- **The negative-case rebuild cost real test strength, as predicted in the entry above.** All four
+  dev hold-out negatives pass `not_found` under both baselines. Building negatives from
+  document-frequency-1 variants means the variant is rare enough that the model does not know it
+  either, so no-retrieval refuses correctly instead of fabricating. The old set's sharpest single
+  result, no-retrieval inventing a confident pathogenic classification for an absent variant, is
+  not reproducible here. Property 4 now measures **retrieval restraint**, not memorization. The
+  old result rested on a method known to be unsound so it was not safe to keep, but the honest
+  accounting is that the replacement tests less, and recovering a real memorization test is an
+  open item.
+- **What changed because of this:**
+  1. `RESULTS.md`'s answer-set rows are superseded, and the standing caveat now records that its
+     own guess about which half of the finding would survive was half wrong.
+  2. `README.md`'s headline claim needs rewriting; it currently quotes the superseded
+     "12.5% either way, zero cases flipped" result.
+  3. **Phase A3 (whole-document-in-context) gets more valuable, not less.** It was designed to
+     separate a retrieval failure from a reading failure on the strength of the flat-direction
+     result. That result is now uncertain, which makes the third baseline the thing that would
+     actually settle it, at a depth n=8 cannot reach.
+  4. A standing lesson for this project's own numbers: the strongest-sounding result in the repo
+     was the one that did not survive contact with a validated eval set. Effect size and
+     interestingness are not evidence.
