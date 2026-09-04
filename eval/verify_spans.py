@@ -51,6 +51,47 @@ CASES_PATH = Path(__file__).parent / "answer_cases.jsonl"
 XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
 
 
+def subject_check(span_text: str, case: dict) -> tuple[str, str | None]:
+    """Does this span actually talk about the case's subject?
+
+    Added 2026-09-04 after the phase A1 case-validation pass found this
+    script had not just missed an error but *created* one. For
+    `atm_c7570g_c_risk_class_disagree_001`, the note quoted "up to 60%
+    lifetime breast cancer by the age of 70 years". That phrase really is in
+    PMC10092731, in a background paragraph about a completely different
+    variant (c.7271T>G). The quote search found it, `expand_to_paragraph`
+    widened to that paragraph, and `--fix` wrote the offsets in. Every
+    individual step worked. The script verified that the quote exists in the
+    article and never asked the question that mattered: is this span about
+    the variant the case is about?
+
+    Three outcomes, not two, because a strict variant requirement would
+    false-positive on legitimate spans: a disagreement case's "the other
+    side" span is often about the gene in general (e.g. "ATM pathogenic
+    variants show HR 1.32"), which is exactly the contrast the case is
+    built on.
+
+      ok            the specific variant notation appears in the span
+      gene_only     the gene appears but the variant does not. Legitimate
+                    for a general-risk contrast span, a red flag for a span
+                    meant to support a variant-specific claim. Needs a human.
+      absent        neither appears. Strong signal the span is wrong.
+    """
+    variant = case.get("variant")
+    normalized = " ".join(span_text.split()).lower()
+    if variant:
+        candidates = [variant]
+        if variant[:2] in ("c.", "p."):
+            candidates.append(variant[2:])
+        for term in candidates:
+            if term.lower() in normalized:
+                return "ok", term
+    gene = case.get("gene")
+    if gene and re.search(rf"\b{re.escape(gene)}\b", span_text, re.I):
+        return ("gene_only" if variant else "ok"), gene
+    return "absent", None
+
+
 def extract_quotes(note: str) -> list[str]:
     """Candidate quotes to search for, longest first. A note's quote marks
     don't guarantee the enclosed text is byte-exact against the source (one
@@ -124,6 +165,9 @@ def verify_case(case: dict, fix: bool) -> list[str]:
                 f"  [NO_QUOTE_TO_VERIFY] {pmcid}/{section} "
                 f"[{span['char_start']}:{span['char_end']}] ({status})"
             )
+            if in_range:
+                lines += _subject_lines(declared_text[span["char_start"]:span["char_end"]],
+                                        case, pmcid)
             continue
 
         cand_section, quote_start, quote_end = match[0], match[1], match[2]
@@ -131,8 +175,19 @@ def verify_case(case: dict, fix: bool) -> list[str]:
         start, end = expand_to_paragraph(cand_text, quote_start, quote_end)
         current = (section, span["char_start"], span["char_end"])
         correct = (cand_section, start, end)
+        verdict, _term = subject_check(cand_text[start:end], case)
+
         if current == correct:
             lines.append(f"  [OK] {pmcid}/{section} [{span['char_start']}:{span['char_end']}]")
+        elif verdict == "absent" and fix:
+            # The quote matched somewhere that mentions neither the variant
+            # nor the gene. Rewriting to it is how this script cemented a
+            # wrong span once already; refuse and make a human look.
+            lines.append(
+                f"  [REFUSED_FIX] {pmcid}: quote found at {cand_section}[{start}:{end}] but that "
+                f"span mentions neither {case.get('variant') or ''} nor {case.get('gene')}. "
+                f"Left as-is; verify by hand."
+            )
         else:
             lines.append(
                 f"  [FIXED] {pmcid}: {section}[{span['char_start']}:{span['char_end']}] "
@@ -142,7 +197,20 @@ def verify_case(case: dict, fix: bool) -> list[str]:
                 span["section"] = cand_section
                 span["char_start"] = start
                 span["char_end"] = end
+        lines += _subject_lines(cand_text[start:end], case, pmcid)
     return lines
+
+
+def _subject_lines(span_text: str, case: dict, pmcid: str) -> list[str]:
+    verdict, term = subject_check(span_text, case)
+    if verdict == "ok":
+        return []
+    if verdict == "gene_only":
+        return [f"    [SUBJECT_GENE_ONLY] {pmcid}: span mentions {term} but not "
+                f"{case['variant']}. Legitimate for a general-risk contrast span, wrong for a "
+                f"variant-specific claim. Needs a human."]
+    return [f"    [SUBJECT_ABSENT] {pmcid}: span mentions neither "
+            f"{case.get('variant') or '(no variant)'} nor {case.get('gene')}."]
 
 
 def main() -> int:
@@ -152,7 +220,9 @@ def main() -> int:
     args = parser.parse_args()
 
     cases = load_cases()
-    counts = {"OK": 0, "FIXED": 0, "NO_QUOTE_TO_VERIFY": 0, "MISSING_FILE": 0, "NO_SUCH_SECTION": 0}
+    counts = {"OK": 0, "FIXED": 0, "REFUSED_FIX": 0, "NO_QUOTE_TO_VERIFY": 0,
+              "MISSING_FILE": 0, "NO_SUCH_SECTION": 0,
+              "SUBJECT_GENE_ONLY": 0, "SUBJECT_ABSENT": 0}
     for case in cases:
         if not case["gold_spans"]:
             continue
@@ -170,6 +240,10 @@ def main() -> int:
     print("\nSummary:", counts)
     if counts["NO_QUOTE_TO_VERIFY"] or counts["MISSING_FILE"] or counts["NO_SUCH_SECTION"]:
         print("Spans above need manual review; this script does not guess without a quote to check against.")
+    if counts["SUBJECT_ABSENT"] or counts["SUBJECT_GENE_ONLY"] or counts["REFUSED_FIX"]:
+        print("Subject flags above are the check this script lacked until 2026-09-04, when a "
+              "case-validation pass found it had repointed a span onto a paragraph about a "
+              "different variant. A quote existing in an article does not make it the right quote.")
     return 0
 
 

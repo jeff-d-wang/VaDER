@@ -3,14 +3,6 @@ atm_c7570g_c_risk_class_disagree_001,dev,disagreement,2026-09-03T01:09:33.323329
 atm_variants_controversy_disagree_001,dev,disagreement,2026-09-03T01:09:33.323329+00:00,0
 chek2_1100delc_prognosis_disagree_001,dev,disagreement,2026-09-03T01:09:33.323329+00:00,0
 chek2_breast_popul_specific_disagree_001,held_out,disagreement,2026-09-03T01:09:33.323329+00:00,0
-atm_c2023c_t_breast_neg_001,dev,negative,2026-09-03T01:09:33.323329+00:00,0
-atm_c6832c_a_ovarian_neg_001,dev,negative,2026-09-03T01:09:33.323329+00:00,0
-brca2_c7435_7439delacaaa_pancreatic_neg_001,dev,negative,2026-09-03T01:09:33.323329+00:00,0
-brca2_c9097c_t_ovarian_neg_001,held_out,negative,2026-09-03T01:09:33.323329+00:00,0
-chek2_c583a_g_ovarian_neg_001,dev,negative,2026-09-03T01:09:33.323329+00:00,0
-palb2_c1592del4_pancreatic_neg_001,dev,negative,2026-09-03T01:09:33.323329+00:00,0
-palb2_c697c_t_colorectal_neg_001,held_out,negative,2026-09-03T01:09:33.323329+00:00,0
-tp53_c242c_g_lymphoma_neg_001,held_out,negative,2026-09-03T01:09:33.323329+00:00,0
 atm_at_lymphoid_tumor_ord_001,dev,ordinary,2026-09-03T01:09:33.323329+00:00,0
 brca2_pancreatic_risk_ord_001,dev,ordinary,2026-09-03T01:09:33.323329+00:00,0
 brca_prs_ovarian_risk_ord_001,dev,ordinary,2026-09-03T01:09:33.323329+00:00,0
@@ -18,3 +10,9 @@ chek2_prostate_risk_ord_001,held_out,ordinary,2026-09-03T01:09:33.323329+00:00,0
 palb2_breast_risk_ord_001,dev,ordinary,2026-09-03T01:09:33.323329+00:00,0
 tp53_chondrosarcoma_survival_ord_001,dev,ordinary,2026-09-03T01:09:33.323329+00:00,0
 tp53_her2_breast_ord_001,held_out,ordinary,2026-09-03T01:09:33.323329+00:00,0
+atm_c2502_2503insa_endometrial_neg_001,dev,negative,2026-09-04T05:27:40.464302+00:00,0
+atm_c4777minus1g_c_pancreatic_neg_001,dev,negative,2026-09-04T05:27:40.464302+00:00,0
+brca1_c4484plus2t_c_prostate_neg_001,dev,negative,2026-09-04T05:27:40.464302+00:00,0
+brca2_c8010g_c_prostate_neg_001,held_out,negative,2026-09-04T05:27:40.464302+00:00,0
+brca2_c9275a_g_ovarian_neg_001,dev,negative,2026-09-04T05:27:40.464302+00:00,0
+tp53_c826_827gc_at_ovarian_neg_001,held_out,negative,2026-09-04T05:27:40.464302+00:00,0

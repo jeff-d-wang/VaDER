@@ -24,6 +24,27 @@ rather than editing the old one, so the history of how a metric moved stays visi
 ran on the same items. Record the paired test result (McNemar or paired bootstrap) in Notes, not
 just the two marginal rates.
 
+> ### Standing caveat on every `answer`-set row below (added 2026-09-04)
+>
+> A human validation pass over 8 of the 19 answer cases (phase A1) found **4 of 8 defective**:
+> 95% CI [0.22, 0.78]. One gold span cited a paragraph about a different variant, two gold labels
+> asserted quantitative detail absent from the span they cite, and one negative case asserts an
+> absence the corpus contradicts. Details and the failure mode in `DECISION_LOG.md`, "phase A1 case
+> validation, half the gold set is defective."
+>
+> **Every `answer`-set row above the 2026-09-04 rerun was graded against that set.** They are not
+> withdrawn (this file is append-only, and the runs really happened) but they are **superseded**:
+> see "Repaired-set rerun (12 dev cases), 2026-09-04" below for the current numbers.
+>
+> Recorded because it is the kind of thing that is tempting to quietly fix: when this caveat was
+> first written it guessed that the headline finding "is a large effect and is unlikely to be an
+> artifact of four bad cases." **That guess was half wrong.** The groundedness half survived and
+> got stronger. The direction half, the confident claim that retrieval moves direction/strength
+> not at all, did not survive: on the repaired set three cases flip where previously none did.
+>
+> The `retrieval`-set rows (SciFact, NFCorpus) are **unaffected**: those labels come from BEIR, not
+> from this project.
+
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-08-31 | 0c | n/a (server load test) | `latency/p95_ms` | 30.0 | [27.2, 35.8] | 60 | `stub-c401c89faf18` | `4bb2b5e` | concurrency=1 baseline; stub keyword-match handler, not a RAG quality number, see notes below the table |
@@ -128,6 +149,99 @@ flipped). The groundedness paired test is no longer under the conventional p<0.0
 vs the earlier p=0.008), purely a sample-size effect from correctly excluding the 6 held-out cases,
 not a change in the effect itself. This is the number to cite going forward; the 19-case rows above
 mixed held-out cases into a "dev" result and used the pre-fix judge, kept for the trail only.
+
+### Harness validation: BM25 on SciFact and NFCorpus, 2026-09-03 (phase A2)
+
+The check `PROJECT_PLAN.md` M1 asks for first and this project had skipped: run the harness against
+free labeled data before trusting it on your own. Same `eval/bm25.py` the domain baselines used,
+scored by the new hand-written `eval/ir_metrics.py`, against published Pyserini multi-field BM25
+figures (Kamalloo et al., "Resources for Brewing BEIR," arXiv 2306.07471, Table 2). Prediction and
+the pre-registered bug threshold were logged before the run (`docs/DECISION_LOG.md`).
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/ndcg@10` | 0.598 | [0.550, 0.648] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | reference 0.665, delta -0.067, **90% of reference**; within the predicted [0.55, 0.70] |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/recall@100` | 0.825 | [0.782, 0.867] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | reference 0.908, delta -0.083; point estimate fell *below* the predicted [0.85, 0.91], the one sub-prediction that missed |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/recall@10` | 0.718 | [0.668, 0.767] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | no published reference at this depth |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/mrr` | 0.569 | [0.521, 0.620] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | full-depth MRR |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/ndcg@10` | 0.288 | [0.255, 0.321] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | reference 0.325, delta -0.037, **89% of reference**; predicted point estimate was 0.29 |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/recall@100` | 0.220 | [0.192, 0.250] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | reference 0.250, delta -0.030 |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/recall@10` | 0.135 | [0.111, 0.160] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | low by construction: 38 relevant docs per query on average, so 10 slots cannot hold many of them |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/mrr` | 0.505 | [0.454, 0.554] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | see the note below on why MRR and recall@10 disagree this violently |
+
+**What this establishes, and what it does not.** Both nDCG@10 figures land at 89-90% of an external
+published reference, far above the 60%-of-reference bug threshold registered before the run. The
+metric definitions, the tokenizer, the BM25 scoring loop, and the qrel join are therefore
+approximately right, and the domain numbers above that depend on the same retriever do not inherit
+an obvious plumbing bug. It does **not** establish that this BM25 matches the reference: the CI
+half-widths here are about 0.05 and 0.03, so a real 0.07 shortfall on SciFact is visible and
+correctly attributed to the known implementation differences (untuned `k1=1.5, b=0.75` against
+Lucene's `0.9/0.4`, no stemming, no stopword removal, one concatenated field instead of two
+weighted ones).
+
+**The NFCorpus MRR/recall gap is the most instructive number in the table.** MRR 0.505 against
+recall@10 0.135 on the same ranking is not a contradiction: NFCorpus averages 38 relevant documents
+per query, so finding *one* of them near the top is easy (that is MRR) while getting a meaningful
+share of them into 10 slots is arithmetically close to impossible (that is recall@10). Reporting
+either alone would badly misdescribe this retriever. That is the argument for the metric families
+below being reported together rather than a single headline retrieval number.
+
+**Git SHA caveat:** `ea364b7`+ means commit `ea364b7` plus the then-uncommitted
+`eval/ir_metrics.py`, `eval/benchmarks/run_benchmark.py`, and the `bm25.py` split of
+`index_from_paragraphs` out of `build_index`. The BM25 formula itself is unchanged from `ea364b7`
+(`test_bm25.py` passes unmodified across that refactor). Update these rows to the real SHA on the
+next commit, the same way the 0c rows were handled.
+
+### Repaired-set rerun (12 dev cases), 2026-09-04: the direction finding does not survive
+
+Both baselines re-run against the repaired 17-case set (12 dev), on the rebuilt BM25 index over
+the post-hold-out corpus (7,857 articles, 436,834 paragraphs). Same judge and judge-prompt version
+as the 2026-09-03 rows, so the only things that changed are the gold labels and the negative-case
+construction. **These rows supersede every `answer`-set row above.**
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_direction` | 0.250 | [0.07, 0.59] | 8 | `cfg-5d548c010eeb` | `ea364b7`+ | was 0.125 on the defective set |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-5d548c010eeb` | `ea364b7`+ | fails by construction, no spans to cite |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_disagreement` | 0.0 | [0.00, 0.56] | 3 | `cfg-5d548c010eeb` | `ea364b7`+ | |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_not_found` | 0.917 | [0.65, 0.98] | 12 | `cfg-5d548c010eeb` | `ea364b7`+ | all 4 dev hold-out negatives pass; see the note on what that costs |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_direction` | 0.375 | [0.14, 0.69] | 8 | `cfg-9c6b643661a9` | `ea364b7`+ | **paired delta +12pp, McNemar exact p=1.000, 3 cases flipped.** The "exactly flat, zero flips" result is gone, see below |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_groundedness` | 0.750 | [0.41, 0.93] | 8 | `cfg-9c6b643661a9` | `ea364b7`+ | paired delta +75pp, **McNemar exact p=0.031**, 6 of 8 cases flipped to pass, 0 the other way |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-9c6b643661a9` | `ea364b7`+ | paired delta +67pp, p=0.500, n=3 too small to read |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_not_found` | 0.917 | [0.65, 0.98] | 12 | `cfg-9c6b643661a9` | `ea364b7`+ | paired delta 0pp; the two baselines fail on *different* cases (1 each) |
+
+**The headline result changed, and this is the payoff from the validation pass.** The 2026-09-03
+rows supported a confident negative claim: direction/strength was *exactly* 12.5% under both
+baselines with **zero cases flipping either way**, which read as strong evidence that direction
+failures are a synthesis problem retrieval cannot touch. On the repaired set that claim does not
+hold. Direction is 25% vs 37.5%, and **three cases flip** (two to BM25, one to no-retrieval).
+The "zero flips" observation was partly an artifact of defective gold.
+
+What replaces it is weaker and more honest: **at n=8 this eval set cannot tell whether retrieval
+helps direction/strength.** A +12pp delta with McNemar p=1.000 is not evidence of an effect, and
+it is not evidence of no effect either. The earlier confident negative was over-read from a set
+that was both too small and partly wrong.
+
+**Repairing gold roughly doubled measured direction quality on both baselines** (12.5% to 25% and
+12.5% to 37.5%). Two of the three repaired cases had gold that penalized correct answers: one
+asserted cohort figures the cited span did not contain, one attributed a BRCA2-only finding to
+BRCA1 and BRCA2 both. The systems were being marked wrong for being right. A defective eval set
+understated system quality by about half on this property, which is worth remembering the next
+time a number here looks disappointing.
+
+**Groundedness got stronger and now clears the conventional line:** +75pp, p=0.031, 6 of 8 cases
+flipping to pass and none the other way. This is the one claim in the project that is both large
+and now statistically supported at its own n.
+
+**What the negative-case rebuild cost, stated plainly.** All four dev hold-out negatives pass
+`not_found` under *both* baselines. That is the predicted consequence of building them from
+document-frequency-1 variants: a variant rare enough to hold out safely is one the model does not
+know either, so no-retrieval refuses correctly rather than fabricating. The old set's sharpest
+single result, no-retrieval inventing a confident pathogenic classification for a variant the
+corpus lacked, is not reproducible here. That result rested on a case built by a method now known
+to be unsound, so it was not safe to keep, but the replacement genuinely tests less. Property 4
+now measures retrieval restraint, not memorization. Recovering the memorization test needs a
+different construction, and that is an open item rather than a solved one.
 
 **On the stub handler:** these are Step 0c's required first `RESULTS.md` row (`PROJECT_PLAN.md`
 0c exit criterion), not a system-quality baseline. The handler is deliberately trivial (literal

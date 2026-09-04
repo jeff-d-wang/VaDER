@@ -120,9 +120,16 @@ a missing source file, restore, all via the real CLI).
 ## The eval case format
 
 `answer_cases.example.jsonl` is the target schema, worked examples, one JSON object per line.
-`answer_cases.jsonl` is the canonical, real file: 19 cases as of 2026-09-02 (4 disagreement, 8
-negative, 7 ordinary evidence), verified, still short of the ~50-80 target in `PROJECT_PLAN.md`
-(see `docs/DECISION_LOG.md`). Fields:
+`answer_cases.jsonl` is the canonical, real file: **17 cases as of 2026-09-04** (4 disagreement, 6
+negative, 7 ordinary evidence), 12 dev / 5 held-out.
+
+**Read `docs/DECISION_LOG.md`'s two phase A1 entries before trusting or extending this file.** A
+human validation pass over 8 of the previous 19 cases found 4 defective. Three were repaired
+against source, one was retired as invalid, and all 7 remaining search-built negative cases were
+retired and replaced by 6 built by hold-out. The set is smaller than it was and much further from
+`PROJECT_PLAN.md`'s 50-80 target, which the v4 audit already judged the right direction: the
+n>=300 retrieval set is the better use of hours, and a smaller set that is right beats a larger
+one that is half wrong. Fields:
 
 | Field | Meaning |
 |---|---|
@@ -281,6 +288,120 @@ default. Using `--held-out include` or `--held-out only` requires `--touch-reaso
 appends a row to `held_out_touches.csv` (also committed, the audit log), printing a warning if the
 count exceeds 3. Don't run the held-out split casually, this cost is real: once an answer to a
 held-out case has been seen, that exposure can't be un-seen.
+
+### ir_metrics.py: retrieval metrics, hand-written
+
+recall@k, MRR, nDCG@k, and a query-level percentile bootstrap CI. No IR library, same rule
+`bm25.py` was built under. The module docstring writes out each definition and the two choices
+that matter: a query with no relevant documents is **undefined** for recall and nDCG (dropped from
+the mean, not scored 0 or 1, either of which would misreport a query no system could answer), and
+unjudged retrieved documents count as gain 0, the standard BEIR treatment. `evaluate()` returns
+every metric with its own CI and its own `n`, because those `n`s differ.
+
+Tests (`python test_ir_metrics.py`, 20 assertions) check the nDCG worked example against arithmetic
+written out by hand in the test docstring, not against another implementation's output. A test that
+asserts "matches whatever the library said" would defend nothing, which is the point of hand-writing
+the module at all.
+
+### benchmarks/run_benchmark.py: is the harness broken?
+
+`PROJECT_PLAN.md` M1's first instruction, and the one that had been skipped: run the harness
+against free labeled data before trusting it on your own. Points `bm25.py` at a BEIR benchmark via
+`loader.py` and scores it with `ir_metrics.py`, printing each metric against the published
+Pyserini BM25 reference and against a bug threshold (60% of reference) registered in
+`docs/DECISION_LOG.md` before the first run.
+
+```
+python run_benchmark.py --dataset scifact --out ../runs/scifact_bm25.json
+python run_benchmark.py --dataset nfcorpus --limit-queries 20   # smoke test, refuses to write output
+```
+
+Both datasets run in a few seconds. Result (2026-09-03): nDCG@10 at 89-90% of the published
+reference on both, well clear of the bug threshold. Full numbers and the sub-prediction that missed
+are in `docs/RESULTS.md` and `docs/DECISION_LOG.md`.
+
+### make_case_worksheet.py: validating the cases themselves
+
+Not judge calibration. Kappa asks whether the judge grades like a human; this asks the question
+underneath it, **is the gold label right at all**. Every case in `answer_cases.jsonl` carries
+`created_by: agent:*` and none had been read by a person, so both the judge and any human rater
+were grading against unchecked ground truth.
+
+```
+python make_case_worksheet.py --n 8 --seed 0 --out case_worksheet.md
+# a person fills in the verdict/why lines
+python make_case_worksheet.py --summarize case_worksheet.md
+```
+
+Samples stratified by case type (taking at least one of each before filling up, so a small `n`
+cannot skip the negative and disagreement cases, which are the ones most likely to be subtly
+wrong), dev split only by default. Renders each gold span's **full** source text: truncating span
+display is exactly the bug that contaminated the first kappa pass, and `test_make_case_worksheet.py`
+regression-tests against it. For negative cases there is no span, so it renders the case's own
+completeness claim and asks whether the notation sweep was wide enough to believe.
+
+The worksheet is git-ignored. The durable record of a validation pass is a `DECISION_LOG.md` entry
+plus `validated_by` / `validated_at_utc` written back onto the cases themselves, next to
+`created_by`.
+
+### check_gold_claims.py: does the gold label assert numbers its spans don't contain?
+
+The deterministic half of catching **citation drift**, the failure mode the phase A1 validation
+pass found in the gold set: a label asserting something more specific than, or misattributed
+relative to, the span recorded next to it. Two of the four defects were purely numeric (gold
+asserted cohort figures that sat in the same abstract but outside the cited span), and those are
+catchable with arithmetic: pull every number out of `gold.direction` + `gold.strength`, pull every
+number out of the text the gold spans point at, report the difference.
+
+No LLM, no judgment. Variant notations and gene symbols are stripped first, since `c.7570G>C` and
+`BRCA1/2` carry digits that are positions and names, not findings. It is a **precision** tool: a
+missing number is strong evidence of a real problem, a clean result only means the numbers line
+up. `brca_prs_ovarian_risk_ord_001`'s other defect, attributing a BRCA2-only finding to both
+genes, involves no numbers and this cannot see it.
+
+```
+python check_gold_claims.py
+python check_gold_claims.py --case-id brca_prs_ovarian_risk_ord_001
+```
+
+### verify_negative_cases.py: are the negative cases still negative?
+
+Negative cases are now built by **hold-out**, not by failed search (see `docs/DECISION_LOG.md`,
+"negative cases rebuilt by hold-out"). The old method asserted absence from a search that found
+nothing, which is not proof: notation space is unbounded and prose descriptions escape any
+notation list. One case built that way asserted an absence three corpus articles contradicted.
+
+Each rebuilt case names a variant that appeared in exactly one corpus article, and that article is
+held out, so absence is true by construction. This script confirms the construction still holds:
+the notation appears in zero remaining articles, the claimed held-out article is in the registry
+and gone from the corpus, and the case is marked `construction: hold_out` at all. About 9 seconds
+over the full corpus.
+
+```
+python verify_negative_cases.py
+```
+
+It cannot prove no article discusses the same variant under a different name; no keyword method
+can. That is exactly why hold-out rather than search is what makes these cases sound, and this
+script is a regression guard on the construction, not a proof of absence.
+
+### mine_rare_variants.py: finding hold-out candidates
+
+The provenance of the current negative cases, kept in the repo so their "document frequency 1"
+claim is reproducible rather than asserted. Scans every paragraph that mentions a condition, pulls
+out HGVS notations, and reports those appearing in at most `--max-df` articles.
+
+```
+python mine_rare_variants.py --max-df 1
+python mine_rare_variants.py --max-df 2 --condition "ovarian cancer" --out candidates.csv
+```
+
+**The `gene?` column is a hint, not a finding.** The first version of this script assigned each
+variant the first gene symbol in the paragraph, and 4 of 8 shortlisted candidates turned out
+misattributed (`c.2502_2503insA` is ATM not BRCA2, `c.1919C>A` is PMS2 not PALB2). Attribution is
+now nearest-preceding-symbol within 60 characters, with the distance reported so a weak match is
+visible, and `test_mine_rare_variants.py` pins all four real misattributions as regressions. It is
+still a hint: read the source for any candidate before building a case on it.
 
 ### kappa.py, make_kappa_worksheet.py, run_kappa_calibration.py: judge calibration
 

@@ -114,16 +114,13 @@ def iter_paragraphs(xml_path: Path, pmcid: str) -> list[Paragraph]:
     return out
 
 
-def build_index(xml_dir: Path, pmcids: list[str], min_paragraph_words: int = 5) -> BM25Index:
-    paragraphs: list[Paragraph] = []
-    for pmcid in pmcids:
-        xml_path = xml_dir / f"{pmcid}.xml"
-        if not xml_path.exists():
-            continue
-        for p in iter_paragraphs(xml_path, pmcid):
-            if len(tokenize(p.text)) >= min_paragraph_words:
-                paragraphs.append(p)
-
+def index_from_paragraphs(paragraphs: list[Paragraph]) -> BM25Index:
+    """The scoring-side half of index construction, split out from
+    build_index so the identical formula can be pointed at something other
+    than this project's own corpus. That is what makes the harness
+    validation in benchmarks/run_benchmark.py meaningful: SciFact and
+    NFCorpus are scored by exactly this code, not by a reimplementation of
+    it that could agree with the reference while the real one disagrees."""
     term_freqs = [Counter(tokenize(p.text)) for p in paragraphs]
     doc_lengths = [sum(tf.values()) for tf in term_freqs]
     doc_freq: dict[str, int] = {}
@@ -137,3 +134,27 @@ def build_index(xml_dir: Path, pmcids: list[str], min_paragraph_words: int = 5) 
         paragraphs=paragraphs, doc_freq=doc_freq, term_freqs=term_freqs,
         doc_lengths=doc_lengths, avg_doc_length=avg_doc_length, n_docs=n_docs,
     )
+
+
+def build_index(xml_dir: Path, pmcids: list[str], min_paragraph_words: int = 5) -> BM25Index:
+    paragraphs: list[Paragraph] = []
+    for pmcid in pmcids:
+        xml_path = xml_dir / f"{pmcid}.xml"
+        if not xml_path.exists():
+            continue
+        for p in iter_paragraphs(xml_path, pmcid):
+            if len(tokenize(p.text)) >= min_paragraph_words:
+                paragraphs.append(p)
+    return index_from_paragraphs(paragraphs)
+
+
+def build_index_from_texts(docs: list[tuple[str, str]]) -> BM25Index:
+    """Index (doc_id, text) pairs as whole documents, one Paragraph each.
+
+    For a benchmark corpus there is no section structure and no char-offset
+    provenance to preserve, so those fields are degenerate by design:
+    `section` is "doc" and the offsets span the whole text. They are kept
+    rather than made optional so there is exactly one index type in this
+    project, and so a benchmark hit and a corpus hit are the same shape."""
+    paragraphs = [Paragraph(doc_id, "doc", 0, len(text), text) for doc_id, text in docs]
+    return index_from_paragraphs(paragraphs)

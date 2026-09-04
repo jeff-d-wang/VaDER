@@ -44,6 +44,13 @@ eval/runs/
 # result is a DECISION_LOG.md / RESULTS.md entry, not this file.
 eval/kappa_worksheet*.md
 
+# Case-validation worksheets (make_case_worksheet.py, phase A1): regenerable
+# from a seed, and a working document while being filled in. The durable
+# record of a validation pass is a DECISION_LOG.md entry plus the
+# validated_by/validated_at_utc fields written back onto the cases
+# themselves, alongside created_by, not this file.
+eval/case_worksheet*.md
+
 # eval/benchmarks/: downloaded benchmark datasets (SciFact, NFCorpus, etc.)
 # are regenerable from download_datasets.py. Code (loader.py, test_loader.py)
 # is committed; data files (.jsonl, .txt) are not.
