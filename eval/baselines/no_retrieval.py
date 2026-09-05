@@ -25,47 +25,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
+from eval.baselines._runner import (NO_CONTEXT_PROMPT, answer_from, load_cases,
+                                    write_run)
 from eval.llm_client import DEFAULT_MODEL, groq_chat_json
 
-CASES_PATH = Path(__file__).parent.parent / "data" / "answer_cases.jsonl"
-
-PROMPT_VERSION = "no_retrieval_v1"
-
-_PROMPT = """You are answering a question about cancer genomics variant-disease evidence,
-from your own training knowledge only. You have no access to any external documents or search.
-
-Question: {query}
-
-If you are not confident you know a specific, well-documented answer to this exact question,
-say so rather than guessing plausibly.
-
-Respond with strict JSON:
-{{
-  "direction": "short phrase describing the reported direction/effect, or null if unknown",
-  "strength": "short phrase describing effect strength/confidence, or null if unknown",
-  "not_found": true if you do not have reliable knowledge of this specific variant-condition pair, else false,
-  "answer_text": "1-3 sentence answer explaining your reasoning"
-}}"""
-
-
-def load_cases() -> list[dict]:
-    with open(CASES_PATH) as f:
-        return [json.loads(line) for line in f if line.strip()]
-
-
-def git_sha() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent, text=True,
-        ).strip()
-    except Exception:
-        return "unknown"
+PROMPT_VERSION = "no_retrieval_v2"
 
 
 def run(cases: list[dict], model: str) -> list[dict]:
@@ -73,42 +40,21 @@ def run(cases: list[dict], model: str) -> list[dict]:
     for case in cases:
         if case["stratum"] != "evidence":
             continue  # this baseline only covers the evidence stratum for now
-        out = groq_chat_json(_PROMPT.format(query=case["query"]), model=model)
-        answers.append({
-            "case_id": case["case_id"],
-            "direction": out.get("direction"),
-            "strength": out.get("strength"),
-            "not_found": bool(out.get("not_found", False)),
-            "answer_text": out.get("answer_text", ""),
-            "claims": [],  # no retrieval step, nothing to cite; see module docstring
-        })
+        out = groq_chat_json(NO_CONTEXT_PROMPT.format(query=case["query"]), model=model)
+        # claims stays empty: no retrieval step, nothing to cite. See the
+        # module docstring, that is the expected shape, not a bug.
+        answers.append(answer_from(case, out, []))
     return answers
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    cases = load_cases()
-    answers = run(cases, args.model)
-
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        for a in answers:
-            f.write(json.dumps(a) + "\n")
-
-    meta = {
-        "model": args.model, "prompt_version": PROMPT_VERSION, "git_sha": git_sha(),
-        "n_cases": len(answers), "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-    }
-    meta_path = out_path.with_suffix(out_path.suffix + ".meta.json")
-    meta_path.write_text(json.dumps(meta, indent=2))
-
-    print(f"Wrote {len(answers)} answers to {out_path}")
-    print(f"Wrote run metadata to {meta_path}")
+    answers = run(load_cases(), args.model)
+    write_run(Path(args.out), answers, args.model, PROMPT_VERSION)
     return 0
 
 
