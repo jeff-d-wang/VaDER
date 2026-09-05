@@ -4,9 +4,10 @@ during review (2026-09-01): this project's other test files are stdlib-only,
 `python -m <pkg>.tests.test_x`, no test framework dependency, so this one now matches.
 Run:
 
-    python -m eval.benchmarks.test_loader
+    python -m unittest eval.benchmarks.test_loader
 """
 import json
+import unittest
 import sys
 import tempfile
 from pathlib import Path
@@ -43,102 +44,86 @@ def _make_temp_dataset(base_dir: Path, name: str) -> Path:
     return dataset_dir
 
 
-def run_tests():
-    failures = []
+class TestLoaders(unittest.TestCase):
+    def setUp(self):
+        self.base_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.dataset = _make_temp_dataset(self.base_dir, "test_dataset")
 
-    def check(name, cond, detail=""):
-        if cond:
-            print(f"  ok   {name}")
-        else:
-            print(f"  FAIL {name}  {detail}")
-            failures.append(name)
+    def link(self, name):
+        """load_benchmark takes a dataset NAME under a base path, so each
+        test gets its own symlink to the one temp dataset."""
+        (self.base_dir / name).symlink_to(self.dataset)
+        return load_benchmark(name, base_path=self.base_dir)
 
-    with tempfile.TemporaryDirectory() as tmp_s:
-        base_dir = Path(tmp_s)
-        temp_dataset = _make_temp_dataset(base_dir, "test_dataset")
+    def test_load_corpus(self):
+        docs = load_corpus(self.dataset / "corpus.jsonl")
+        self.assertEqual(set(docs), {"doc1", "doc2"}, docs)
+        self.assertEqual(docs["doc1"].id, "doc1")
+        self.assertEqual(docs["doc1"].text, "Machine learning is about algorithms.")
+        self.assertEqual(docs["doc1"].title, "ML Basics")
+        self.assertIsNone(docs["doc2"].title, "title is optional and defaults to None")
 
-        # --- load_corpus ---
-        docs = load_corpus(temp_dataset / "corpus.jsonl")
-        check("load_corpus: reads both documents", len(docs) == 2, docs)
-        check("load_corpus: doc1 present", "doc1" in docs)
-        check("load_corpus: doc2 present", "doc2" in docs)
-        check("load_corpus: doc1 fields", docs["doc1"].id == "doc1"
-              and docs["doc1"].text == "Machine learning is about algorithms."
-              and docs["doc1"].title == "ML Basics")
-        check("load_corpus: title optional, defaults to None", docs["doc2"].title is None)
+    def test_load_queries(self):
+        queries = load_queries(self.dataset / "queries.jsonl")
+        self.assertEqual(set(queries), {"q1", "q2"}, queries)
+        self.assertEqual(queries["q1"].id, "q1")
+        self.assertEqual(queries["q1"].text, "What is machine learning?")
 
-        # --- load_queries ---
-        queries = load_queries(temp_dataset / "queries.jsonl")
-        check("load_queries: reads both queries", len(queries) == 2, queries)
-        check("load_queries: q1 present", "q1" in queries)
-        check("load_queries: q2 present", "q2" in queries)
-        check("load_queries: q1 fields", queries["q1"].id == "q1"
-              and queries["q1"].text == "What is machine learning?")
-
-        # --- load_qrels ---
-        judgments = load_qrels(temp_dataset / "qrels.txt")
-        check("load_qrels: reads all 4 judgment lines", len(judgments) == 4, judgments)
+    def test_load_qrels(self):
+        judgments = load_qrels(self.dataset / "qrels.txt")
+        self.assertEqual(len(judgments), 4, judgments)
         j0 = judgments[0]
-        check("load_qrels: first judgment fields",
-              j0.query_id == "q1" and j0.doc_id == "doc1" and j0.relevance == 1, j0)
+        self.assertEqual((j0.query_id, j0.doc_id, j0.relevance), ("q1", "doc1", 1), j0)
 
-        # --- BenchmarkDataset, via load_benchmark against a symlinked dataset dir ---
-        for i, test_name in enumerate(["link_a", "link_b", "link_c"], 1):
-            (base_dir / test_name).symlink_to(temp_dataset)
+    def test_load_benchmark_counts(self):
+        ds = self.link("link_a")
+        self.assertEqual(ds.name, "link_a")
+        self.assertEqual((ds.doc_count, ds.query_count, ds.judgment_count), (2, 2, 4))
 
-        ds = load_benchmark("link_a", base_path=base_dir)
-        check("load_benchmark: name", ds.name == "link_a")
-        check("load_benchmark: doc_count", ds.doc_count == 2)
-        check("load_benchmark: query_count", ds.query_count == 2)
-        check("load_benchmark: judgment_count", ds.judgment_count == 4)
+    def test_get_judgments_for_query(self):
+        q1 = self.link("link_b").get_judgments_for_query("q1")
+        self.assertEqual(len(q1), 2, q1)
+        self.assertEqual({j.doc_id for j in q1}, {"doc1", "doc2"})
 
-        ds_b = load_benchmark("link_b", base_path=base_dir)
-        q1_judgments = ds_b.get_judgments_for_query("q1")
-        check("get_judgments_for_query: 2 judgments for q1", len(q1_judgments) == 2, q1_judgments)
-        check("get_judgments_for_query: doc ids", {j.doc_id for j in q1_judgments} == {"doc1", "doc2"})
+    def test_get_relevant_docs(self):
+        ds = self.link("link_c")
+        self.assertEqual(ds.get_relevant_docs("q1"), ["doc1"])
+        self.assertEqual(ds.get_relevant_docs("q2"), ["doc2"])
 
-        ds_c = load_benchmark("link_c", base_path=base_dir)
-        check("get_relevant_docs: q1", ds_c.get_relevant_docs("q1") == ["doc1"])
-        check("get_relevant_docs: q2", ds_c.get_relevant_docs("q2") == ["doc2"])
+    def test_a_missing_dataset_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            load_benchmark("nonexistent", base_path=self.base_dir)
 
-        # --- error paths ---
+    def test_a_dataset_missing_queries_or_qrels_raises(self):
+        incomplete = self.base_dir / "incomplete"
+        incomplete.mkdir()
+        (incomplete / "corpus.jsonl").touch()
+        with self.assertRaises(FileNotFoundError):
+            load_benchmark("incomplete", base_path=self.base_dir)
+
+
+class TestDownloadedDatasets(unittest.TestCase):
+    """The real BEIR datasets, if they have been downloaded. Skipped, never
+    failed, when they have not: run download_datasets.py first."""
+
+    EXPECTED = {
+        "scifact": (5183, 300, 339),
+        "nfcorpus": (3633, 323, 12334),
+    }
+
+    def counts(self, name):
         try:
-            load_benchmark("nonexistent", base_path=Path("/tmp"))
-            check("missing dataset raises FileNotFoundError", False)
+            ds = load_benchmark(name)
         except FileNotFoundError:
-            check("missing dataset raises FileNotFoundError", True)
+            self.skipTest(f"{name} not downloaded (run download_datasets.py first)")
+        return ds.doc_count, ds.query_count, ds.judgment_count
 
-        incomplete_dir = base_dir / "incomplete"
-        incomplete_dir.mkdir()
-        (incomplete_dir / "corpus.jsonl").touch()
-        try:
-            load_benchmark("incomplete", base_path=base_dir)
-            check("incomplete dataset (missing queries/qrels) raises FileNotFoundError", False)
-        except FileNotFoundError:
-            check("incomplete dataset (missing queries/qrels) raises FileNotFoundError", True)
+    def test_scifact(self):
+        self.assertEqual(self.counts("scifact"), self.EXPECTED["scifact"])
 
-    # --- the actual downloaded datasets, skipped (not failed) if not present ---
-    for dataset_name, expected in [
-        ("scifact", {"doc_count": 5183, "query_count": 300, "judgment_count": 339}),
-        ("nfcorpus", {"doc_count": 3633, "query_count": 323, "judgment_count": 12334}),
-    ]:
-        try:
-            ds = load_benchmark(dataset_name)
-        except FileNotFoundError:
-            print(f"  skip  {dataset_name}: not downloaded (run download_datasets.py first)")
-            continue
-        check(f"{dataset_name}: doc_count == {expected['doc_count']}",
-              ds.doc_count == expected["doc_count"], ds.doc_count)
-        check(f"{dataset_name}: query_count == {expected['query_count']}",
-              ds.query_count == expected["query_count"], ds.query_count)
-        check(f"{dataset_name}: judgment_count == {expected['judgment_count']}",
-              ds.judgment_count == expected["judgment_count"], ds.judgment_count)
-
-    if failures:
-        print(f"\n{len(failures)} FAILED: {failures}")
-        sys.exit(1)
-    print("\nALL ASSERTIONS PASSED")
+    def test_nfcorpus(self):
+        self.assertEqual(self.counts("nfcorpus"), self.EXPECTED["nfcorpus"])
 
 
 if __name__ == "__main__":
-    run_tests()
+    unittest.main()

@@ -3,15 +3,14 @@ Tests for the Step 0c service. Builds a tiny synthetic corpus (manifest +
 JATS-ish XML) in a temp dir per test via `create_app`, so these never touch
 the real ../corpus and stay fast and hermetic. Run:
 
-    python -m pytest test_app.py -v
-    # or, no pytest available:
-    python test_app.py
+    python -m unittest service.test_app
 """
 from __future__ import annotations
 
+import unittest
+
 import csv
 import json
-import sys
 import tempfile
 from pathlib import Path
 
@@ -78,90 +77,84 @@ def _make_client(tmp: Path, **kw) -> TestClient:
     return TestClient(app)
 
 
-def run_tests():
-    failures = []
+class TestService(unittest.TestCase):
+    """Each method gets its own temp corpus and its own client, so a failure
+    isolates to one behaviour instead of aborting the rest of the file."""
 
-    def check(name, cond, detail=""):
-        if cond:
-            print(f"  ok   {name}")
-        else:
-            print(f"  FAIL {name}  {detail}")
-            failures.append(name)
+    def client(self, **kw):
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        return self.enterContext(_make_client(tmp / "a", **kw))
 
-    with tempfile.TemporaryDirectory() as tmp_s:
-        tmp = Path(tmp_s)
+    def query(self, client, text):
+        r = client.post("/query", json={"query": text})
+        return r, [json.loads(l) for l in r.text.strip().split("\n")]
 
-        # --- healthz reports corpus size and config ---
-        with _make_client(tmp / "a", max_scan=7, max_matches=3) as client:
-            r = client.get("/healthz")
-            check("healthz status 200", r.status_code == 200, r.text)
-            body = r.json()
-            check("healthz corpus_size == 4", body["corpus_size"] == 4, body)
-            check("healthz reports config", body["config"]["max_scan"] == 7, body)
+    def test_healthz_reports_corpus_size_and_config(self):
+        client = self.client(max_scan=7, max_matches=3)
+        r = client.get("/healthz")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["corpus_size"], 4, r.json())
+        self.assertEqual(r.json()["config"]["max_scan"], 7, r.json())
 
-            # --- query returns a match with a source span ---
-            r = client.post("/query", json={"query": "BRCA1 pathogenic variant breast cancer"})
-            check("query status 200", r.status_code == 200, r.text)
-            lines = [json.loads(l) for l in r.text.strip().split("\n")]
-            matches = [l for l in lines if l["type"] == "match"]
-            summary = [l for l in lines if l["type"] == "summary"]
-            check("at least one match", len(matches) >= 1, lines)
-            check("exactly one summary line, last", lines[-1]["type"] == "summary", lines)
-            m = matches[0]
-            check("match has pmcid", m["pmcid"] == "PMC1000001", m)
-            check("match has char offsets", m["char_end"] > m["char_start"] >= 0, m)
-            check("match text is truncated to <=500", len(m["text"]) <= 500, m)
+    def test_query_returns_a_match_with_a_source_span(self):
+        client = self.client(max_scan=7, max_matches=3)
+        r, lines = self.query(client, "BRCA1 pathogenic variant breast cancer")
+        self.assertEqual(r.status_code, 200, r.text)
+        matches = [l for l in lines if l["type"] == "match"]
+        self.assertGreaterEqual(len(matches), 1, lines)
+        self.assertEqual(lines[-1]["type"], "summary", "exactly one summary line, last")
+        m = matches[0]
+        self.assertEqual(m["pmcid"], "PMC1000001", m)
+        self.assertTrue(m["char_end"] > m["char_start"] >= 0, m)
+        self.assertLessEqual(len(m["text"]), 500, "match text is truncated to <=500")
 
-            # --- no hit: unrelated query ---
-            r = client.post("/query", json={"query": "zebrafish coral reef photosynthesis"})
-            lines = [json.loads(l) for l in r.text.strip().split("\n")]
-            check("not_found line present", any(l["type"] == "not_found" for l in lines), lines)
-            check("not_found note text", [l for l in lines if l["type"] == "not_found"][0]["note"]
-                  == "not found in this corpus")
+    def test_unrelated_query_reports_not_found(self):
+        client = self.client(max_scan=7, max_matches=3)
+        _, lines = self.query(client, "zebrafish coral reef photosynthesis")
+        not_found = [l for l in lines if l["type"] == "not_found"]
+        self.assertTrue(not_found, lines)
+        self.assertEqual(not_found[0]["note"], "not found in this corpus")
 
-            # --- candidate on manifest, xml missing on disk: no crash, just skipped ---
-            r = client.post("/query", json={"query": "BRCA2 variant classification guidelines"})
-            check("missing-xml candidate does not 500", r.status_code == 200, r.text)
+    def test_candidate_with_missing_xml_is_skipped_not_a_500(self):
+        client = self.client(max_scan=7, max_matches=3)
+        r, _ = self.query(client, "BRCA2 variant classification guidelines")
+        self.assertEqual(r.status_code, 200, r.text)
 
-            # --- max_matches cap ---
-            r = client.post("/query", json={"query": "cohort genomics"})
-            lines = [json.loads(l) for l in r.text.strip().split("\n")]
-            matches = [l for l in lines if l["type"] == "match"]
-            check("respects max_matches cap", len(matches) <= 3, matches)
+    def test_respects_max_matches_cap(self):
+        client = self.client(max_scan=7, max_matches=3)
+        _, lines = self.query(client, "cohort genomics")
+        self.assertLessEqual(len([l for l in lines if l["type"] == "match"]), 3)
 
-            # --- validation: query too short ---
-            r = client.post("/query", json={"query": "ab"})
-            check("short query rejected (422)", r.status_code == 422, r.text)
+    def test_short_query_is_rejected(self):
+        client = self.client(max_scan=7, max_matches=3)
+        r = client.post("/query", json={"query": "ab"})
+        self.assertEqual(r.status_code, 422, r.text)
 
-            # --- request log: one JSONL line per attempted query, required fields present ---
-            log_path = tmp / "a" / "logs" / "requests.jsonl"
-            log_lines = [json.loads(l) for l in log_path.read_text().strip().split("\n")]
-            # 4 successful /query calls logged; the 422 (query too short) never
-            # reaches the handler, so it correctly does not produce a log line.
-            check("one log line per attempted /query call", len(log_lines) == 4, len(log_lines))
-            rec = log_lines[0]
-            for field in ("query", "ttft_ms", "total_ms", "n_matches", "stopped_reason", "logged_at_utc"):
-                check(f"log record has {field}", field in rec, rec)
-            check("ttft_ms <= total_ms", all(r["ttft_ms"] <= r["total_ms"] + 0.01 for r in log_lines), log_lines)
+    def test_one_log_line_per_attempted_query(self):
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory())) / "a"
+        client = self.enterContext(_make_client(tmp, max_scan=7, max_matches=3))
+        for q in ("BRCA1 pathogenic variant breast cancer", "zebrafish coral reef photosynthesis",
+                  "BRCA2 variant classification guidelines", "cohort genomics"):
+            client.post("/query", json={"query": q})
+        client.post("/query", json={"query": "ab"})  # 422, never reaches the handler
 
-        # --- empty corpus: /query is 503, healthz says so ---
-        with tempfile.TemporaryDirectory() as empty_dir:
-            empty = Path(empty_dir)
-            (empty / "logs").mkdir()
-            from service.app import create_app as _create_app
-            app = _create_app(manifest_path=empty / "manifest.csv", xml_dir=empty / "xml",
-                               log_path=empty / "logs" / "requests.jsonl")
-            with TestClient(app) as client:
-                r = client.get("/healthz")
-                check("empty corpus healthz status field", r.json()["status"] == "corpus not loaded", r.json())
-                r = client.post("/query", json={"query": "anything at all"})
-                check("empty corpus query is 503", r.status_code == 503, r.text)
+        log_lines = [json.loads(l) for l in
+                     (tmp / "logs" / "requests.jsonl").read_text().strip().split("\n")]
+        self.assertEqual(len(log_lines), 4,
+                         "4 handled queries logged; the 422 never reaches the handler")
+        for field in ("query", "ttft_ms", "total_ms", "n_matches", "stopped_reason", "logged_at_utc"):
+            self.assertIn(field, log_lines[0])
+        self.assertTrue(all(r["ttft_ms"] <= r["total_ms"] + 0.01 for r in log_lines), log_lines)
 
-    if failures:
-        print(f"\n{len(failures)} FAILED: {failures}")
-        sys.exit(1)
-    print("\nALL ASSERTIONS PASSED")
+    def test_empty_corpus_is_503_and_says_so(self):
+        empty = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (empty / "logs").mkdir()
+        app = create_app(manifest_path=empty / "manifest.csv", xml_dir=empty / "xml",
+                          log_path=empty / "logs" / "requests.jsonl")
+        client = self.enterContext(TestClient(app))
+        self.assertEqual(client.get("/healthz").json()["status"], "corpus not loaded")
+        self.assertEqual(client.post("/query", json={"query": "anything at all"}).status_code, 503)
 
 
 if __name__ == "__main__":
-    run_tests()
+    unittest.main()

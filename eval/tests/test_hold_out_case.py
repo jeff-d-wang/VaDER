@@ -7,6 +7,8 @@ handling, and restore, all via the real CLI (subprocess). Run:
 """
 from __future__ import annotations
 
+import unittest
+
 import csv
 import subprocess
 import sys
@@ -30,85 +32,83 @@ def run(args: list) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT))
 
 
-def run_tests():
-    failures = []
+class TestHoldOutCase(unittest.TestCase):
+    """A fresh corpus per test. `hold_out_two` is the shared starting state
+    for everything that needs an existing hold-out to act on, so no test
+    depends on another one having run first."""
 
-    def check(name, cond, detail=""):
-        if cond:
-            print(f"  ok   {name}")
-        else:
-            print(f"  FAIL {name}  {detail}")
-            failures.append(name)
+    ARGS = ("--pair-id", "palb2_pancreatic", "--gene", "PALB2",
+            "--condition", "pancreatic cancer")
 
-    with tempfile.TemporaryDirectory() as tmp_s:
-        tmp = Path(tmp_s)
-        corpus_dir = _write_corpus(tmp, ["PMC1000001", "PMC1000002", "PMC1000003"])
-        held_out_dir = tmp / "held_out"
+    def setUp(self):
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.corpus_dir = _write_corpus(tmp, ["PMC1000001", "PMC1000002", "PMC1000003"])
+        self.held_out_dir = tmp / "held_out"
 
-        # --- hold out two pmcids ---
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "palb2_pancreatic", "--gene", "PALB2", "--condition", "pancreatic cancer",
-                 "--pmcid", "PMC1000001", "--pmcid", "PMC1000002"])
-        check("hold-out CLI exits 0", r.returncode == 0, r.stderr)
-        check("PMC1000001 moved out of corpus", not (corpus_dir / "xml" / "PMC1000001.xml").exists())
-        check("PMC1000001 present in held_out/xml", (held_out_dir / "xml" / "PMC1000001.xml").exists())
-        check("PMC1000003 untouched, still in corpus", (corpus_dir / "xml" / "PMC1000003.xml").exists())
+    def run_cli(self, *args):
+        return run(["--corpus-dir", str(self.corpus_dir),
+                    "--held-out-dir", str(self.held_out_dir), *args])
 
-        registry = list(csv.DictReader(open(held_out_dir / "held_out_pmcids.csv")))
-        check("registry has 2 rows", len(registry) == 2, registry)
-        check("registry row has pair_id/gene/condition",
-              all(r2["pair_id"] == "palb2_pancreatic" and r2["gene"] == "PALB2" for r2 in registry), registry)
+    def registry(self):
+        with open(self.held_out_dir / "held_out_pmcids.csv", newline="") as f:
+            return list(csv.DictReader(f))
 
-        # --- idempotent: re-running the same pair/pmcid is a no-op, not a duplicate row ---
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "palb2_pancreatic", "--gene", "PALB2", "--condition", "pancreatic cancer",
-                 "--pmcid", "PMC1000001"])
-        registry = list(csv.DictReader(open(held_out_dir / "held_out_pmcids.csv")))
-        check("idempotent: still 2 registry rows after re-run", len(registry) == 2, registry)
+    def hold_out_two(self):
+        r = self.run_cli(*self.ARGS, "--pmcid", "PMC1000001", "--pmcid", "PMC1000002")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r
 
-        # --- cross-pair conflict: same pmcid, different pair_id -> refused ---
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "other_pair", "--gene", "PALB2", "--condition", "something else",
-                 "--pmcid", "PMC1000001"])
-        check("cross-pair reassignment refused (nonzero exit)", r.returncode != 0, r.stderr)
-        registry = list(csv.DictReader(open(held_out_dir / "held_out_pmcids.csv")))
-        check("registry unchanged after refused reassignment", len(registry) == 2, registry)
+    def test_holding_out_moves_the_files_and_records_them(self):
+        self.hold_out_two()
+        self.assertFalse((self.corpus_dir / "xml" / "PMC1000001.xml").exists(),
+                         "held-out article must leave the corpus")
+        self.assertTrue((self.held_out_dir / "xml" / "PMC1000001.xml").exists())
+        self.assertTrue((self.corpus_dir / "xml" / "PMC1000003.xml").exists(),
+                        "PMC1000003 was not named, must be untouched")
+        registry = self.registry()
+        self.assertEqual(len(registry), 2, registry)
+        self.assertTrue(all(r["pair_id"] == "palb2_pancreatic" and r["gene"] == "PALB2"
+                            for r in registry), registry)
 
-        # --- missing source file: warns, doesn't crash, no registry row ---
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "ghost_pair", "--gene", "X", "--condition", "y",
-                 "--pmcid", "PMC9999999"])
-        check("missing pmcid: nonzero exit, no crash", r.returncode != 0)
-        registry = list(csv.DictReader(open(held_out_dir / "held_out_pmcids.csv")))
-        check("registry unchanged after missing-file attempt", len(registry) == 2, registry)
+    def test_rerunning_the_same_pair_is_a_noop_not_a_duplicate_row(self):
+        self.hold_out_two()
+        self.run_cli(*self.ARGS, "--pmcid", "PMC1000001")
+        self.assertEqual(len(self.registry()), 2, "idempotent: still 2 rows after a re-run")
 
-        # --- list mode doesn't crash ---
-        r = run(["--held-out-dir", str(held_out_dir), "--list"])
-        check("--list exits 0", r.returncode == 0, r.stderr)
-        check("--list mentions palb2_pancreatic", "palb2_pancreatic" in r.stdout, r.stdout)
+    def test_the_same_pmcid_under_a_different_pair_is_refused(self):
+        self.hold_out_two()
+        r = self.run_cli("--pair-id", "other_pair", "--gene", "PALB2",
+                         "--condition", "something else", "--pmcid", "PMC1000001")
+        self.assertNotEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.registry()), 2, "registry unchanged after a refused reassignment")
 
-        # --- restore ---
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "palb2_pancreatic", "--restore"])
-        check("restore CLI exits 0", r.returncode == 0, r.stderr)
-        check("PMC1000001 back in corpus", (corpus_dir / "xml" / "PMC1000001.xml").exists())
-        check("PMC1000002 back in corpus", (corpus_dir / "xml" / "PMC1000002.xml").exists())
-        registry = list(csv.DictReader(open(held_out_dir / "held_out_pmcids.csv")))
-        check("registry empty after restore", len(registry) == 0, registry)
+    def test_a_missing_source_file_fails_without_recording_anything(self):
+        self.hold_out_two()
+        r = self.run_cli("--pair-id", "ghost_pair", "--gene", "X", "--condition", "y",
+                         "--pmcid", "PMC9999999")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(len(self.registry()), 2, "registry unchanged after a missing-file attempt")
 
-        # --- CLI validation ---
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "x", "--pmcid", "PMC1000003"])
-        check("missing --condition -> nonzero exit", r.returncode != 0)
-        r = run(["--corpus-dir", str(corpus_dir), "--held-out-dir", str(held_out_dir),
-                 "--pair-id", "x", "--condition", "y"])
-        check("missing --pmcid -> nonzero exit", r.returncode != 0)
+    def test_list_mode(self):
+        self.hold_out_two()
+        r = run(["--held-out-dir", str(self.held_out_dir), "--list"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("palb2_pancreatic", r.stdout)
 
-    if failures:
-        print(f"\n{len(failures)} FAILED: {failures}")
-        sys.exit(1)
-    print("\nALL ASSERTIONS PASSED")
+    def test_restore_puts_everything_back_and_empties_the_registry(self):
+        self.hold_out_two()
+        r = self.run_cli("--pair-id", "palb2_pancreatic", "--restore")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((self.corpus_dir / "xml" / "PMC1000001.xml").exists())
+        self.assertTrue((self.corpus_dir / "xml" / "PMC1000002.xml").exists())
+        self.assertEqual(len(self.registry()), 0, "registry empty after restore")
+
+    def test_cli_requires_condition_and_pmcid(self):
+        self.assertNotEqual(self.run_cli("--pair-id", "x", "--pmcid", "PMC1000003").returncode, 0,
+                            "missing --condition must fail")
+        self.assertNotEqual(self.run_cli("--pair-id", "x", "--condition", "y").returncode, 0,
+                            "missing --pmcid must fail")
 
 
 if __name__ == "__main__":
-    run_tests()
+    unittest.main()

@@ -1,19 +1,26 @@
 """
-Shared section-text extraction, used by verify_spans.py and score.py (for
-pulling the text a citation's (pmcid, section, char_start, char_end) span
-actually points at).
+The one definition of this project's source-span offset convention, and the
+only place JATS paragraphs get pulled out of an article.
 
-Offset convention matches service/search.py's `_find_span_in_xml` exactly:
-paragraphs in document order, joined as if by a 1-character separator, so
-`extract_section_text(...)[char_start:char_end]` lines up with any span
-search.py already returns. This module reconstructs the actual joined
-string search.py only accounts for virtually; search.py never needed the
-full string, gold-span verification does.
+START_HERE.md standing rule 5: labels attach to source spans,
+(pmcid, section_id, char_start, char_end), never to chunks. That only holds
+if every producer and consumer of an offset agrees on how offsets are
+counted. Until 2026-09-05 three files counted them separately (this one,
+service/search.py, eval/find_coverage.py), agreeing only by prose assertion,
+and they had already drifted: find_coverage silently produced no paragraphs
+at all for an abstract written as bare text with no <p> children, where this
+module produces one. Every caller now goes through iter_paragraphs.
+
+The convention: paragraphs of a section in document order, joined by a
+single "\n", offsets restarting at 0 per section. So for any span this
+project emits, `extract_section_text(...)[char_start:char_end]` is the text
+it points at.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 from xml.etree import ElementTree as ET
 
 SECTION_TAGS = {"abstract": "abstract", "body": "body"}
@@ -35,22 +42,58 @@ def _paragraph_texts(node: ET.Element) -> list[str]:
     return [text] if text else []
 
 
-def extract_section_text(xml_path: Path, section: str) -> str | None:
-    """Returns the concatenated section text (paragraphs joined by "\\n", the
-    same 1-char-separator convention search.py's offset bookkeeping assumes),
-    or None if the file is missing, unparseable, or the section doesn't
-    exist in this article."""
-    tag = SECTION_TAGS.get(section)
-    if tag is None:
-        return None
+def parse_root(xml_path: Path) -> ET.Element | None:
+    """The article root, or None if the file is missing or unparseable. A
+    caller that needs both paragraphs and something else off the same
+    article (a title, say) parses once with this and passes the root to
+    iter_paragraphs_from_root, rather than paying a second parse."""
     try:
-        root = ET.parse(xml_path).getroot()
+        return ET.parse(xml_path).getroot()
     except (ET.ParseError, OSError):
         return None
+
+
+def iter_paragraphs_from_root(root: ET.Element, section: str
+                               ) -> Iterator[tuple[str, int, int]]:
+    """(text, char_start, char_end) per paragraph of one section, in
+    document order. Yields nothing for an unknown or absent section."""
+    tag = SECTION_TAGS.get(section)
+    if tag is None:
+        return
     node = root.find(f".//{tag}")
     if node is None:
+        return
+    offset = 0
+    for text in _paragraph_texts(node):
+        yield text, offset, offset + len(text)
+        offset += len(text) + 1  # the "\n" extract_section_text joins with
+
+
+def iter_paragraphs(xml_path: Path, sections: tuple[str, ...] = ("abstract", "body")
+                     ) -> Iterator[tuple[str, str, int, int]]:
+    """(section, text, char_start, char_end) for every paragraph of the
+    named sections. This is the shared entry point: bm25 indexing,
+    find_coverage's corpus sweep and service/search.py all read paragraphs
+    through here so a span means the same thing to all of them."""
+    root = parse_root(xml_path)
+    if root is None:
+        return
+    for section in sections:
+        for text, start, end in iter_paragraphs_from_root(root, section):
+            yield section, text, start, end
+
+
+def extract_section_text(xml_path: Path, section: str) -> str | None:
+    """The whole section as one string, paragraphs joined by "\\n". None if
+    the file is missing, unparseable, or has no such section. This is the
+    string every (char_start, char_end) pair indexes into."""
+    root = parse_root(xml_path)
+    if root is None:
         return None
-    return "\n".join(_paragraph_texts(node))
+    tag = SECTION_TAGS.get(section)
+    if tag is None or root.find(f".//{tag}") is None:
+        return None
+    return "\n".join(text for text, _, _ in iter_paragraphs_from_root(root, section))
 
 
 _PUNCT_MAP = str.maketrans({

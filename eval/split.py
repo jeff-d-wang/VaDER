@@ -36,8 +36,6 @@ MAX_RECOMMENDED_TOUCHES = 3
 
 
 def case_type(case: dict) -> str:
-    if case["stratum"] == "methods_extraction":
-        return "methods_extraction"
     if case["is_negative_case"]:
         return "negative"
     if case["gold"].get("has_disagreement"):

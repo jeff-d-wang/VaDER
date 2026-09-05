@@ -8,6 +8,8 @@ the term-matching regex directly. Run:
 """
 from __future__ import annotations
 
+import unittest
+
 import csv
 import subprocess
 import sys
@@ -108,110 +110,94 @@ def run_cli(tmp: Path, extra_args: list) -> tuple:
     return result, out
 
 
-def run_tests():
-    failures = []
+class TestTermPatterns(unittest.TestCase):
+    """Word-boundary matching, the whole point of using \\b rather than a
+    naive substring check."""
 
-    def check(name, cond, detail=""):
-        if cond:
-            print(f"  ok   {name}")
-        else:
-            print(f"  FAIL {name}  {detail}")
-            failures.append(name)
+    def test_matches_a_standalone_term_case_insensitively(self):
+        pat = _or_pattern(["BRCA1"])
+        self.assertTrue(pat.search("the BRCA1 gene"))
+        self.assertTrue(pat.search("a brca1 variant"))
 
-    # --- regex unit tests: word-boundary matching, the whole point of using
-    # \b\b instead of a naive substring check ---
-    pat = _or_pattern(["BRCA1"])
-    check("word-boundary: matches standalone BRCA1", bool(pat.search("the BRCA1 gene")))
-    check("word-boundary: rejects substring match", not pat.search("subBRCA1xyz"))
-    check("word-boundary: case-insensitive", bool(pat.search("a brca1 variant")))
+    def test_rejects_a_substring_match(self):
+        self.assertIsNone(_or_pattern(["BRCA1"]).search("subBRCA1xyz"))
 
-    multi = _or_pattern(["breast cancer", "HBOC"])
-    check("multi-word phrase matches", bool(multi.search("risk of breast cancer in carriers")))
-    check("short alias matches as whole word", bool(multi.search("diagnosed with HBOC")))
-    check("short alias rejects substring", not multi.search("HBOCX syndrome"))
+    def test_multi_word_phrases_and_short_aliases(self):
+        multi = _or_pattern(["breast cancer", "HBOC"])
+        self.assertTrue(multi.search("risk of breast cancer in carriers"))
+        self.assertTrue(multi.search("diagnosed with HBOC"))
+        self.assertIsNone(multi.search("HBOCX syndrome"), "short alias must not match a substring")
 
-    check("empty term list returns None", _or_pattern([]) is None)
-    check("blank-only term list returns None", _or_pattern(["  "]) is None)
+    def test_an_empty_term_list_has_no_pattern(self):
+        self.assertIsNone(_or_pattern([]))
+        self.assertIsNone(_or_pattern(["  "]))
 
-    with tempfile.TemporaryDirectory() as tmp_s:
-        tmp = Path(tmp_s)
 
-        # --- single-pair mode: same_paragraph vs doc_level_only vs no match ---
-        result, out = run_cli(tmp / "a", [
-            "--pair-id", "brca1_breast", "--gene", "BRCA1", "--condition", "breast cancer",
-        ])
-        check("single-pair CLI exits 0", result.returncode == 0, result.stderr)
-        rows = list(csv.DictReader(open(out))) if out.exists() else []
+class TestFindCoverageCli(unittest.TestCase):
+    GENE_LEVEL = ["--pair-id", "brca1_breast", "--gene", "BRCA1", "--condition", "breast cancer"]
+    VARIANT_LEVEL = ["--pair-id", "brca1_variant", "--gene", "BRCA1",
+                     "--variant", "c.68_69delAG", "--condition", "breast cancer"]
+
+    def setUp(self):
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def rows(self, name, args):
+        result, out = run_cli(self.tmp / name, args)
+        with open(out, newline="") as f:
+            rows = list(csv.DictReader(f)) if out.exists() else []
+        return result, rows
+
+    def test_gene_level_query_separates_same_paragraph_from_doc_level(self):
+        result, rows = self.rows("a", self.GENE_LEVEL)
+        self.assertEqual(result.returncode, 0, result.stderr)
         by_pmcid = {r["pmcid"]: r for r in rows}
+        self.assertEqual(by_pmcid.get("PMC2000001", {}).get("strength"), "same_paragraph", rows)
+        self.assertEqual(by_pmcid.get("PMC2000002", {}).get("strength"), "doc_level_only", rows)
+        self.assertNotIn("PMC2000003", by_pmcid, "unrelated article must not match")
+        self.assertNotIn("PMC2000004", by_pmcid, "missing xml on disk: skipped, not a crash")
+        self.assertNotIn("PMC2000005", by_pmcid, "different gene must not match")
+        # PMC2000006/7 also mention BRCA1 + breast cancer, correctly: this
+        # query never asked for a specific variant.
+        self.assertEqual(len(rows), 4, rows)
 
-        check("PMC2000001 found, same_paragraph",
-              by_pmcid.get("PMC2000001", {}).get("strength") == "same_paragraph", rows)
-        check("PMC2000002 found, doc_level_only",
-              by_pmcid.get("PMC2000002", {}).get("strength") == "doc_level_only", rows)
-        check("PMC2000003 not matched (unrelated)", "PMC2000003" not in by_pmcid, rows)
-        check("PMC2000004 (missing xml on disk) does not crash and is not matched",
-              "PMC2000004" not in by_pmcid, rows)
-        check("PMC2000005 (different gene) not matched", "PMC2000005" not in by_pmcid, rows)
-        # Gene-level query (no --variant) also picks up PMC2000006/7, both mention BRCA1 + breast
-        # cancer; that's correct, this query never asked for a specific variant.
-        check("gene-level query: exactly 4 matches total", len(rows) == 4, rows)
+    def test_a_variant_query_is_not_satisfied_by_the_gene_alone(self):
+        """Regression: the gene-alone-satisfies-a-variant-query bug found in
+        review, 2026-09-01."""
+        result, rows = self.rows("a2", self.VARIANT_LEVEL)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        by_pmcid = {r["pmcid"]: r for r in rows}
+        self.assertEqual(set(by_pmcid), {"PMC2000007"},
+                         "only the article carrying the exact variant may match")
 
-        # --- variant-specific query: gene alone must NOT satisfy it (regression test for the
-        # gene-alone-satisfies-a-variant-query bug found in review, 2026-09-01) ---
-        result, out = run_cli(tmp / "a2", [
-            "--pair-id", "brca1_variant", "--gene", "BRCA1", "--variant", "c.68_69delAG",
-            "--condition", "breast cancer",
-        ])
-        check("variant-specific CLI exits 0", result.returncode == 0, result.stderr)
-        rows2 = list(csv.DictReader(open(out))) if out.exists() else []
-        by_pmcid2 = {r["pmcid"]: r for r in rows2}
-        check("variant-specific: only PMC2000007 matches (has the exact variant)",
-              set(by_pmcid2) == {"PMC2000007"}, rows2)
-        check("variant-specific: PMC2000006 excluded (gene mentioned, variant never mentioned)",
-              "PMC2000006" not in by_pmcid2, rows2)
-        check("variant-specific: PMC2000001 excluded (generic 'pathogenic variant', not this one)",
-              "PMC2000001" not in by_pmcid2, rows2)
+    def test_warn_threshold_banner(self):
+        result, _ = run_cli(self.tmp / "a3", self.GENE_LEVEL + ["--warn-threshold", "1"])
+        self.assertIn("[WARN]", result.stderr)
+        self.assertIn("too many to hand-verify", result.stderr)
 
-        # --- warn-threshold: a low threshold on the gene-level query (4 matches) should trip
-        # the warning banner on stderr ---
-        result, _ = run_cli(tmp / "a3", [
-            "--pair-id", "brca1_breast", "--gene", "BRCA1", "--condition", "breast cancer",
-            "--warn-threshold", "1",
-        ])
-        check("warn-threshold banner appears on stderr when exceeded",
-              "[WARN]" in result.stderr and "too many to hand-verify" in result.stderr, result.stderr)
-        result, _ = run_cli(tmp / "a4", [
-            "--pair-id", "brca1_variant", "--gene", "BRCA1", "--variant", "c.68_69delAG",
-            "--condition", "breast cancer", "--warn-threshold", "20",
-        ])
-        check("no warning when under threshold", "[WARN]" not in result.stderr, result.stderr)
+    def test_no_warning_when_under_threshold(self):
+        result, _ = run_cli(self.tmp / "a4", self.VARIANT_LEVEL + ["--warn-threshold", "20"])
+        self.assertNotIn("[WARN]", result.stderr, result.stderr)
 
-        # --- batch mode: two independent term sets scored in one corpus pass ---
-        term_sets_csv = tmp / "term_sets.csv"
+    def test_batch_mode_scores_two_term_sets_in_one_corpus_pass(self):
+        term_sets_csv = self.tmp / "term_sets.csv"
         with open(term_sets_csv, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["pair_id", "genes", "variants", "conditions"])
             w.writerow(["brca1_breast", "BRCA1", "", "breast cancer"])
             w.writerow(["tp53_lfs", "TP53", "", "Li-Fraumeni"])
-        result, out = run_cli(tmp / "b", ["--term-sets-csv", str(term_sets_csv)])
-        check("batch CLI exits 0", result.returncode == 0, result.stderr)
-        rows = list(csv.DictReader(open(out))) if out.exists() else []
-        check("both pair_ids present in batch output",
-              {r["pair_id"] for r in rows} == {"brca1_breast", "tp53_lfs"}, rows)
-        tp53_rows = [r for r in rows if r["pair_id"] == "tp53_lfs"]
-        check("tp53_lfs matches only PMC2000005", {r["pmcid"] for r in tp53_rows} == {"PMC2000005"}, tp53_rows)
+        result, rows = self.rows("b", ["--term-sets-csv", str(term_sets_csv)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({r["pair_id"] for r in rows}, {"brca1_breast", "tp53_lfs"}, rows)
+        tp53 = [r for r in rows if r["pair_id"] == "tp53_lfs"]
+        self.assertEqual({r["pmcid"] for r in tp53}, {"PMC2000005"}, tp53)
 
-        # --- validation errors ---
-        result, _ = run_cli(tmp / "c", [])
-        check("no term set given -> nonzero exit", result.returncode != 0)
-        result, _ = run_cli(tmp / "d", ["--pair-id", "x", "--condition", "breast cancer"])
-        check("pair with condition but no gene/variant -> nonzero exit", result.returncode != 0)
-
-    if failures:
-        print(f"\n{len(failures)} FAILED: {failures}")
-        sys.exit(1)
-    print("\nALL ASSERTIONS PASSED")
+    def test_an_incomplete_term_set_is_refused(self):
+        self.assertNotEqual(run_cli(self.tmp / "c", [])[0].returncode, 0,
+                            "no term set given must fail")
+        self.assertNotEqual(
+            run_cli(self.tmp / "d", ["--pair-id", "x", "--condition", "breast cancer"])[0].returncode,
+            0, "a condition with no gene or variant must fail")
 
 
 if __name__ == "__main__":
-    run_tests()
+    unittest.main()

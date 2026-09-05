@@ -7,6 +7,7 @@ math, S3 key construction, CSV/json shape) before handing the script off,
 not as a substitute for the user's own smoke test against the real APIs.
 """
 import json
+import unittest
 import sys
 import types
 from pathlib import Path
@@ -130,116 +131,115 @@ def _make_fake_eutils_get(id_pool):
 fake_eutils_get = _make_fake_eutils_get(FAKE_PMCIDS)
 
 
-def run_test():
-    import tempfile
-    with mock.patch.object(pull_corpus.EutilsClient, "get", fake_eutils_get):
-        with tempfile.TemporaryDirectory() as tmp:
-            out_dir = Path(tmp) / "corpus"
-            sys.argv = [
-                "pull_corpus.py", "--email", "test@example.com",
-                "--target-n", "5", "--out-dir", str(out_dir), "--workers", "2",
-            ]
-            pull_corpus.main()
+class TestPullCorpus(unittest.TestCase):
+    """One end-to-end scenario against a faked S3 bucket and E-utilities:
+    the pull is a single pipeline and its assertions are about the state it
+    leaves behind, so splitting it into methods would just re-run it."""
 
-            manifest = (out_dir / "manifest.csv").read_text()
-            run_info = json.loads((out_dir / "run_info.json").read_text())
-            xml_files = sorted(p.name for p in (out_dir / "xml").glob("*.xml"))
+    def test_pull_selects_versions_records_provenance_and_skips_non_oa(self):
+        import tempfile
+        with mock.patch.object(pull_corpus.EutilsClient, "get", fake_eutils_get):
+            with tempfile.TemporaryDirectory() as tmp:
+                out_dir = Path(tmp) / "corpus"
+                argv = ["pull_corpus.py", "--email", "test@example.com",
+                        "--target-n", "5", "--out-dir", str(out_dir), "--workers", "2"]
+                with mock.patch.object(sys, "argv", argv):
+                    pull_corpus.main()
 
-            print("\n=== manifest.csv ===")
-            print(manifest)
-            print("=== run_info.json ===")
-            print(json.dumps(run_info, indent=2))
-            print("=== xml files written ===")
-            print(xml_files)
+                manifest = (out_dir / "manifest.csv").read_text()
+                run_info = json.loads((out_dir / "run_info.json").read_text())
+                xml_files = sorted(p.name for p in (out_dir / "xml").glob("*.xml"))
 
-            # Assertions
-            assert run_info["ok"] == 2, f"expected 2 ok (PMC1000001, PMC1000002), got {run_info['ok']}"
-            assert run_info["skipped"] == 2, f"expected 2 skipped (non-OA + not-in-bucket), got {run_info['skipped']}"
-            assert run_info["error"] == 1, f"expected 1 error (missing xml object), got {run_info['error']}"
-            assert "PMC1000001.xml" in xml_files
-            assert "PMC1000002.xml" in xml_files, "should have picked version 2, the higher one"
-            assert (out_dir / "xml" / "PMC1000002.xml").read_text().count("v2") == 1, \
-                "content should be from version 2, not version 1 -- version selection bug"
-            assert "PMC1000003.xml" not in xml_files
-            assert "PMC1000004.xml" not in xml_files
-            assert "PMC1000005.xml" not in xml_files
+                print("\n=== manifest.csv ===")
+                print(manifest)
+                print("=== run_info.json ===")
+                print(json.dumps(run_info, indent=2))
+                print("=== xml files written ===")
+                print(xml_files)
 
-            # sha256 column: present in the header, correct for ok rows, empty otherwise.
-            import csv as _csv
-            import hashlib as _hashlib
-            rows = list(_csv.DictReader((out_dir / "manifest.csv").open()))
-            assert "sha256" in rows[0], "manifest is missing the sha256 column"
-            for r in rows:
-                if r["status"] == "ok":
-                    disk = (out_dir / "xml" / f"{r['pmcid']}.xml").read_bytes()
-                    want = _hashlib.sha256(disk).hexdigest()
-                    assert r["sha256"] == want, f"sha256 mismatch for {r['pmcid']}"
-                    assert len(r["sha256"]) == 64
-                else:
-                    assert r["sha256"] == "", f"{r['pmcid']} is {r['status']} but has a sha256"
+                # Assertions
+                assert run_info["ok"] == 2, f"expected 2 ok (PMC1000001, PMC1000002), got {run_info['ok']}"
+                assert run_info["skipped"] == 2, f"expected 2 skipped (non-OA + not-in-bucket), got {run_info['skipped']}"
+                assert run_info["error"] == 1, f"expected 1 error (missing xml object), got {run_info['error']}"
+                assert "PMC1000001.xml" in xml_files
+                assert "PMC1000002.xml" in xml_files, "should have picked version 2, the higher one"
+                assert (out_dir / "xml" / "PMC1000002.xml").read_text().count("v2") == 1, \
+                    "content should be from version 2, not version 1 -- version selection bug"
+                assert "PMC1000003.xml" not in xml_files
+                assert "PMC1000004.xml" not in xml_files
+                assert "PMC1000005.xml" not in xml_files
 
-            # run_info records the sampling method and seed.
-            assert run_info["sampling"] == "uniform_random"
-            assert run_info["seed"] == 0
-            assert run_info["esearch_ids_truncated"] is False
+                # sha256 column: present in the header, correct for ok rows, empty otherwise.
+                import csv as _csv
+                import hashlib as _hashlib
+                with (out_dir / "manifest.csv").open(newline="") as _f:
+                    rows = list(_csv.DictReader(_f))
+                assert "sha256" in rows[0], "manifest is missing the sha256 column"
+                for r in rows:
+                    if r["status"] == "ok":
+                        disk = (out_dir / "xml" / f"{r['pmcid']}.xml").read_bytes()
+                        want = _hashlib.sha256(disk).hexdigest()
+                        assert r["sha256"] == want, f"sha256 mismatch for {r['pmcid']}"
+                        assert len(r["sha256"]) == 64
+                    else:
+                        assert r["sha256"] == "", f"{r['pmcid']} is {r['status']} but has a sha256"
 
-            # Resume behavior: run again, PMC1000001/2 should be picked up from disk
-            # without re-hitting the fake S3 (find_latest_version would raise if called
-            # with a prefix not in FAKE_BUCKET_PREFIXES for a wiped registry -- instead
-            # we just check the file still there and status still ok on a second pass).
-            sys.argv = [
-                "pull_corpus.py", "--email", "test@example.com",
-                "--target-n", "5", "--out-dir", str(out_dir), "--workers", "2",
-            ]
-            pull_corpus.main()
-            manifest2 = (out_dir / "manifest.csv").read_text()
-            assert "already on disk (resumed)" in manifest2, "resume path did not trigger on second run"
-            # sha256 still populated on the resumed (read-from-disk) path.
-            import csv as _csv2
-            for r in _csv2.DictReader((out_dir / "manifest.csv").open()):
-                if r["status"] == "ok":
-                    assert len(r["sha256"]) == 64, f"resumed row {r['pmcid']} lost its sha256"
+                # run_info records the sampling method and seed.
+                assert run_info["sampling"] == "uniform_random"
+                assert run_info["seed"] == 0
+                assert run_info["esearch_ids_truncated"] is False
 
-    print("\nrun_test: ALL ASSERTIONS PASSED")
+                # Resume behavior: run again, PMC1000001/2 should be picked up from disk
+                # without re-hitting the fake S3 (find_latest_version would raise if called
+                # with a prefix not in FAKE_BUCKET_PREFIXES for a wiped registry -- instead
+                # we just check the file still there and status still ok on a second pass).
+                argv = ["pull_corpus.py", "--email", "test@example.com",
+                        "--target-n", "5", "--out-dir", str(out_dir), "--workers", "2"]
+                with mock.patch.object(sys, "argv", argv):
+                    pull_corpus.main()
+                manifest2 = (out_dir / "manifest.csv").read_text()
+                assert "already on disk (resumed)" in manifest2, "resume path did not trigger on second run"
+                # sha256 still populated on the resumed (read-from-disk) path.
+                import csv as _csv2
+                for r in _csv2.DictReader((out_dir / "manifest.csv").open()):
+                    if r["status"] == "ok":
+                        assert len(r["sha256"]) == 64, f"resumed row {r['pmcid']} lost its sha256"
 
+    @staticmethod
+    def _attempted_pmcids(out_dir):
+        import csv as _csv
+        with (out_dir / "manifest.csv").open(newline="") as f:
+            return {r["pmcid"] for r in _csv.DictReader(f)}
 
-def _attempted_pmcids(out_dir):
-    import csv as _csv
-    return {r["pmcid"] for r in _csv.DictReader((out_dir / "manifest.csv").open())}
+    def test_the_pmcid_sample_is_a_seeded_uniform_draw(self):
+        """Same seed -> same subset, different seed -> (almost surely) a
+        different subset, and the draw is a strict subset when there are more
+        matches than the target."""
+        import tempfile
+        fake = _make_fake_eutils_get(FAKE_PMCIDS_LARGE)  # 40 healthy articles
+        with mock.patch.object(pull_corpus.EutilsClient, "get", fake):
+            with tempfile.TemporaryDirectory() as tmp:
+                def pull(seed, sub):
+                    out_dir = Path(tmp) / sub
+                    argv = ["pull_corpus.py", "--email", "test@example.com", "--target-n", "10",
+                            "--seed", str(seed), "--out-dir", str(out_dir), "--workers", "2",
+                            "--skip-metadata"]
+                    with mock.patch.object(sys, "argv", argv):
+                        pull_corpus.main()
+                    return self._attempted_pmcids(out_dir)
 
+                a = pull(1, "a")
+                b = pull(1, "b")
+                c = pull(2, "c")
 
-def run_sampling_test():
-    """The PMCID sample must be a seeded uniform draw: same seed -> same subset,
-    different seed -> (almost surely) a different subset, and the draw is a
-    strict subset when there are more matches than the target."""
-    import tempfile
-    fake = _make_fake_eutils_get(FAKE_PMCIDS_LARGE)  # 40 healthy articles
-    with mock.patch.object(pull_corpus.EutilsClient, "get", fake):
-        with tempfile.TemporaryDirectory() as tmp:
-            def pull(seed, sub):
-                out_dir = Path(tmp) / sub
-                sys.argv = [
-                    "pull_corpus.py", "--email", "test@example.com", "--target-n", "10",
-                    "--seed", str(seed), "--out-dir", str(out_dir), "--workers", "2",
-                    "--skip-metadata",
-                ]
-                pull_corpus.main()
-                return _attempted_pmcids(out_dir)
-
-            a = pull(1, "a")
-            b = pull(1, "b")
-            c = pull(2, "c")
-
-            # int(10 * 1.15) == 11 sampled from 40.
-            assert len(a) == 11, f"expected 11 sampled, got {len(a)}"
-            assert a <= set(FAKE_PMCIDS_LARGE), "sample drew IDs that were not in the result set"
-            assert a == b, "same seed produced a different sample (not reproducible)"
-            assert a != c, "different seed produced the identical sample (seed not wired through)"
-
-    print("run_sampling_test: ALL ASSERTIONS PASSED")
+                # int(10 * 1.15) == 11 sampled from 40.
+                self.assertEqual(len(a), 11, "expected 11 sampled")
+                self.assertLessEqual(a, set(FAKE_PMCIDS_LARGE),
+                                     "sample drew IDs that were not in the result set")
+                self.assertEqual(a, b, "same seed produced a different sample (not reproducible)")
+                self.assertNotEqual(a, c, "different seed produced the identical sample "
+                                          "(seed not wired through)")
 
 
 if __name__ == "__main__":
-    run_test()
-    run_sampling_test()
-    print("\nALL TESTS PASSED")
+    unittest.main()

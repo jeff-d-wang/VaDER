@@ -25,6 +25,8 @@ import time
 
 import httpx
 
+from common.stats import bootstrap_ci
+
 QUERIES = [
     "BRCA1 pathogenic variant hereditary breast and ovarian cancer",
     "TP53 mutation Li-Fraumeni syndrome",
@@ -87,17 +89,6 @@ def percentile(values: list[float], p: float) -> float:
     return qs[idx]
 
 
-def bootstrap_ci(values: list[float], p: float, seed: int, iters: int = 2000) -> tuple[float, float]:
-    """Percentile bootstrap 95% CI for the p-th percentile of `values`."""
-    rng = random.Random(seed)
-    n = len(values)
-    boots = [percentile([values[rng.randrange(n)] for _ in range(n)], p) for _ in range(iters)]
-    boots.sort()
-    lo = boots[int(0.025 * iters)]
-    hi = boots[min(int(0.975 * iters), iters - 1)]
-    return lo, hi
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
@@ -123,8 +114,8 @@ def main():
         "throughput_rps": round(len(ok) / wall_s, 2) if wall_s > 0 else None,
     }
     if ok:
-        ci_total = bootstrap_ci(total_ms, 95, args.seed)
-        ci_ttft = bootstrap_ci(ttft_ms, 95, args.seed)
+        ci_total = bootstrap_ci(total_ms, lambda v: percentile(v, 95), seed=args.seed)
+        ci_ttft = bootstrap_ci(ttft_ms, lambda v: percentile(v, 95), seed=args.seed)
         summary.update({
             "latency_p50_ms": round(percentile(total_ms, 50), 1),
             "latency_p95_ms": round(percentile(total_ms, 95), 1),

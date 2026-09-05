@@ -1,21 +1,12 @@
 """Stdlib-only tests for bm25.py. Run directly: python -m retrieval.tests.test_bm25"""
 from __future__ import annotations
 
-import sys
+import unittest
+
 import tempfile
 from pathlib import Path
 
 from retrieval.bm25 import BM25Index, build_index, iter_paragraphs, tokenize
-
-_FAILURES: list[str] = []
-
-
-def check(name: str, condition: bool, detail: str = "") -> None:
-    status = "ok" if condition else "FAIL"
-    print(f"[{status}] {name}" + (f" -- {detail}" if detail and not condition else ""))
-    if not condition:
-        _FAILURES.append(name)
-
 
 ARTICLES = {
     "PMC1": {
@@ -48,96 +39,73 @@ def make_corpus(tmp: str) -> Path:
     return xml_dir
 
 
-def test_tokenize() -> None:
-    toks = tokenize("BRCA1 c.1100delC increases risk (95% CI)")
-    check("keeps gene symbol as one token", "brca1" in toks)
-    check("keeps HGVS-style dotted token intact", "c.1100delc" in toks, str(toks))
-    check("lowercases", all(t == t.lower() for t in toks))
+class TestBm25(unittest.TestCase):
+    def test_tokenize(self) -> None:
+        toks = tokenize("BRCA1 c.1100delC increases risk (95% CI)")
+        self.assertIn("brca1", toks, "keeps gene symbol as one token")
+        self.assertIn("c.1100delc", toks, "%s -- %s" % ("keeps HGVS-style dotted token intact", str(toks)))
+        self.assertTrue(all(t == t.lower() for t in toks), "lowercases")
 
+    def test_iter_paragraphs_offsets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xml_dir = make_corpus(tmp)
+            paras = iter_paragraphs(xml_dir / "PMC1.xml", "PMC1")
+            self.assertEqual(len(paras), 2, "%s -- %s" % ("finds both abstract and body paragraphs", str(paras)))
+            for p in paras:
+                self.assertTrue(p.text == ARTICLES["PMC1"][p.section][p.char_start:p.char_end], f"{p.section} offsets round-trip against real text")
 
-def test_iter_paragraphs_offsets() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        xml_dir = make_corpus(tmp)
-        paras = iter_paragraphs(xml_dir / "PMC1.xml", "PMC1")
-        check("finds both abstract and body paragraphs", len(paras) == 2, str(paras))
-        for p in paras:
-            check(f"{p.section} offsets round-trip against real text",
-                  p.text == ARTICLES["PMC1"][p.section][p.char_start:p.char_end])
+    def test_build_index_and_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xml_dir = make_corpus(tmp)
+            index = build_index(xml_dir, ["PMC1", "PMC2", "PMC3"], min_paragraph_words=3)
+            self.assertTrue(index.n_docs >= 5, "%s -- %s" % ("index built over all paragraphs across 3 articles", str(index.n_docs)))
 
+            results = index.search("BRCA1 breast cancer risk", top_k=3)
+            self.assertTrue(len(results) > 0, "search returns results")
+            top_pmcid = results[0][0].pmcid
+            self.assertTrue(top_pmcid == "PMC3", "%s -- %s" % ("most BRCA1/breast-cancer-dense paragraph (PMC3) ranks first", f"got {top_pmcid}: {[r[0].pmcid for r in results]}"))
+            scores = [s for _, s in results]
+            self.assertEqual(scores, sorted(scores, reverse=True), "results sorted descending by score")
 
-def test_build_index_and_search() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        xml_dir = make_corpus(tmp)
-        index = build_index(xml_dir, ["PMC1", "PMC2", "PMC3"], min_paragraph_words=3)
-        check("index built over all paragraphs across 3 articles", index.n_docs >= 5, str(index.n_docs))
+            irrelevant = index.search("diabetes cardiovascular cohort", top_k=3)
+            self.assertTrue(irrelevant[0][0].pmcid == "PMC2", "%s -- %s" % ("unrelated query top hit is the cardiovascular paragraph (PMC2 body)", str([r[0].pmcid for r in irrelevant])))
 
-        results = index.search("BRCA1 breast cancer risk", top_k=3)
-        check("search returns results", len(results) > 0)
-        top_pmcid = results[0][0].pmcid
-        check("most BRCA1/breast-cancer-dense paragraph (PMC3) ranks first",
-              top_pmcid == "PMC3", f"got {top_pmcid}: {[r[0].pmcid for r in results]}")
-        scores = [s for _, s in results]
-        check("results sorted descending by score", scores == sorted(scores, reverse=True))
+            no_match = index.search("zzzznonexistenttermzzzz", top_k=3)
+            self.assertEqual(no_match, [], "query with no matching terms returns empty, not garbage")
 
-        irrelevant = index.search("diabetes cardiovascular cohort", top_k=3)
-        check("unrelated query top hit is the cardiovascular paragraph (PMC2 body)",
-              irrelevant[0][0].pmcid == "PMC2", str([r[0].pmcid for r in irrelevant]))
+    def test_idf_rarity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xml_dir = make_corpus(tmp)
+            index = build_index(xml_dir, ["PMC1", "PMC2", "PMC3"], min_paragraph_words=3)
+            # "brca1" appears in some but not all paragraphs; a term in every
+            # paragraph should score a lower idf than one in very few.
+            common_terms = [t for t, df in index.doc_freq.items() if df == index.n_docs]
+            rare_terms = [t for t, df in index.doc_freq.items() if df == 1]
+            if common_terms and rare_terms:
+                self.assertTrue(index.idf(common_terms[0]) < index.idf(rare_terms[0]), "a term in every paragraph has lower idf than a term in one")
+            self.assertTrue(all(index.idf(t) >= 0 for t in index.doc_freq), "idf is never negative (the +1 variant)")
 
-        no_match = index.search("zzzznonexistenttermzzzz", top_k=3)
-        check("query with no matching terms returns empty, not garbage", no_match == [])
+    def test_save_load_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xml_dir = make_corpus(tmp)
+            index = build_index(xml_dir, ["PMC1", "PMC2", "PMC3"], min_paragraph_words=3)
+            before = index.search("BRCA1 breast cancer", top_k=3)
 
+            save_path = Path(tmp) / "index.pkl"
+            index.save(save_path)
+            loaded = BM25Index.load(save_path)
+            after = loaded.search("BRCA1 breast cancer", top_k=3)
 
-def test_idf_rarity() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        xml_dir = make_corpus(tmp)
-        index = build_index(xml_dir, ["PMC1", "PMC2", "PMC3"], min_paragraph_words=3)
-        # "brca1" appears in some but not all paragraphs; a term in every
-        # paragraph should score a lower idf than one in very few.
-        common_terms = [t for t, df in index.doc_freq.items() if df == index.n_docs]
-        rare_terms = [t for t, df in index.doc_freq.items() if df == 1]
-        if common_terms and rare_terms:
-            check("a term in every paragraph has lower idf than a term in one",
-                  index.idf(common_terms[0]) < index.idf(rare_terms[0]))
-        check("idf is never negative (the +1 variant)",
-              all(index.idf(t) >= 0 for t in index.doc_freq))
+            self.assertTrue([(p.pmcid, p.char_start, round(s, 6)) for p, s in before] ==
+                  [(p.pmcid, p.char_start, round(s, 6)) for p, s in after], "search results identical after save/load round-trip")
 
-
-def test_save_load_roundtrip() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        xml_dir = make_corpus(tmp)
-        index = build_index(xml_dir, ["PMC1", "PMC2", "PMC3"], min_paragraph_words=3)
-        before = index.search("BRCA1 breast cancer", top_k=3)
-
-        save_path = Path(tmp) / "index.pkl"
-        index.save(save_path)
-        loaded = BM25Index.load(save_path)
-        after = loaded.search("BRCA1 breast cancer", top_k=3)
-
-        check("search results identical after save/load round-trip",
-              [(p.pmcid, p.char_start, round(s, 6)) for p, s in before] ==
-              [(p.pmcid, p.char_start, round(s, 6)) for p, s in after])
-
-
-def test_min_paragraph_words_filter() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        xml_dir = make_corpus(tmp)
-        loose = build_index(xml_dir, ["PMC1"], min_paragraph_words=0)
-        strict = build_index(xml_dir, ["PMC1"], min_paragraph_words=100)
-        check("a high min_paragraph_words threshold drops all short paragraphs",
-              strict.n_docs == 0 and loose.n_docs > 0, f"loose={loose.n_docs} strict={strict.n_docs}")
-
-
-def run_tests() -> int:
-    test_tokenize()
-    test_iter_paragraphs_offsets()
-    test_build_index_and_search()
-    test_idf_rarity()
-    test_save_load_roundtrip()
-    test_min_paragraph_words_filter()
-    print(f"\n{'PASS' if not _FAILURES else 'FAIL'}: "
-          f"{len(_FAILURES)} failure(s)" if _FAILURES else "All checks passed.")
-    return 1 if _FAILURES else 0
+    def test_min_paragraph_words_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xml_dir = make_corpus(tmp)
+            loose = build_index(xml_dir, ["PMC1"], min_paragraph_words=0)
+            strict = build_index(xml_dir, ["PMC1"], min_paragraph_words=100)
+            self.assertTrue(strict.n_docs == 0 and loose.n_docs > 0, "%s -- %s" % ("a high min_paragraph_words threshold drops all short paragraphs", f"loose={loose.n_docs} strict={strict.n_docs}"))
 
 
 if __name__ == "__main__":
-    sys.exit(run_tests())
+    unittest.main()

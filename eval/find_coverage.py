@@ -48,7 +48,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-from xml.etree import ElementTree as ET
+
+from common.corpus_text import iter_paragraphs
 
 Paragraph = tuple  # (section: str, text: str, char_start: int, char_end: int)
 
@@ -117,23 +118,9 @@ def load_term_sets_from_csv(path: Path) -> list:
 
 def _extract_paragraphs(xml_path: Path) -> list:
     """(section, text, char_start, char_end) for every abstract and body
-    paragraph. Offsets restart at 0 per section, matching the
-    (pmcid, section_id, char_start, char_end) label schema."""
-    try:
-        root = ET.parse(xml_path).getroot()
-    except (ET.ParseError, OSError):
-        return []
-    paras = []
-    for section_name, xpath in (("abstract", ".//abstract"), ("body", ".//body")):
-        container = root.find(xpath)
-        if container is None:
-            continue
-        offset = 0
-        for p in container.findall(".//p"):
-            text = "".join(p.itertext())
-            paras.append((section_name, text, offset, offset + len(text)))
-            offset += len(text) + 1
-    return paras
+    paragraph. common.corpus_text owns the offset convention; this used to
+    reimplement it and disagreed about abstracts with no <p> children."""
+    return list(iter_paragraphs(xml_path))
 
 
 _WORKER_TERMSETS: list = []

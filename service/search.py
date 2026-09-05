@@ -23,7 +23,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
-from xml.etree import ElementTree as ET
+
+from common.corpus_text import iter_paragraphs_from_root, parse_root
 
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
 _STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "into", "role", "its", "are"}
@@ -94,28 +95,23 @@ def _title_candidates(words: list[str], articles: list[ArticleMeta]) -> list[Art
 def _find_span_in_xml(xml_path: Path, words: list[str]) -> MatchSpan | None:
     """First body paragraph containing a query word, as a source span. Real
     disk I/O and real XML parsing per candidate, which is the point: this is
-    what gives the service genuine, variable-cost per-request latency."""
-    try:
-        root = ET.parse(xml_path).getroot()
-    except (ET.ParseError, OSError):
-        return None
-    body = root.find(".//body")
-    if body is None:
+    what gives the service genuine, variable-cost per-request latency.
+
+    Offsets come from common.corpus_text, which owns the convention (one
+    parse per candidate still, hence parse_root rather than the by-path
+    helper: a second parse would inflate the latency this measures)."""
+    root = parse_root(xml_path)
+    if root is None:
         return None
     title_el = root.find(".//article-title")
     title = "".join(title_el.itertext()).strip() if title_el is not None else xml_path.stem
 
-    offset = 0
-    for p in body.findall(".//p"):
-        text = "".join(p.itertext())
-        text_lower = text.lower()
-        if any(w in text_lower for w in words):
+    for text, start, end in iter_paragraphs_from_root(root, "body"):
+        if any(w in text.lower() for w in words):
             return MatchSpan(
                 pmcid=xml_path.stem, title=title, section="body",
-                char_start=offset, char_end=offset + len(text),
-                text=text[:500],
+                char_start=start, char_end=end, text=text[:500],
             )
-        offset += len(text) + 1
     return None
 
 

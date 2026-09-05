@@ -43,8 +43,9 @@ every number.
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass
+
+from common.stats import bootstrap_ci
 
 
 @dataclass
@@ -102,23 +103,6 @@ def mean_ignoring_none(values: list[float | None]) -> tuple[float, int]:
     if not defined:
         return 0.0, 0
     return sum(defined) / len(defined), len(defined)
-
-
-def bootstrap_ci(values: list[float], n_resamples: int = 2000, seed: int = 0,
-                 alpha: float = 0.05) -> tuple[float, float]:
-    """Percentile bootstrap over per-query scores. Seeded, so a reported
-    interval is reproducible from the same per-query values."""
-    if not values:
-        return (0.0, 0.0)
-    rng = random.Random(seed)
-    n = len(values)
-    means = []
-    for _ in range(n_resamples):
-        means.append(sum(values[rng.randrange(n)] for _ in range(n)) / n)
-    means.sort()
-    lo = means[int((alpha / 2) * n_resamples)]
-    hi = means[min(n_resamples - 1, int((1 - alpha / 2) * n_resamples))]
-    return lo, hi
 
 
 @dataclass
