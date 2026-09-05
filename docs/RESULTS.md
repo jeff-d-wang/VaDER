@@ -47,12 +47,12 @@ just the two marginal rates.
 
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-08-31 | 0c | n/a (server load test) | `latency/p95_ms` | 30.0 | [27.2, 35.8] | 60 | `stub-c401c89faf18` | `4bb2b5e` | concurrency=1 baseline; stub keyword-match handler, not a RAG quality number, see notes below the table |
-| 2026-08-31 | 0c | n/a (server load test) | `latency/p50_ms` | 390.9 | n/a (point estimate) | 150 | `stub-c401c89faf18` | `4bb2b5e` | concurrency=20, named-load test |
-| 2026-08-31 | 0c | n/a (server load test) | `latency/p95_ms` | 476.8 | [472.6, 489.1] | 150 | `stub-c401c89faf18` | `4bb2b5e` | concurrency=20; ~16x the concurrency=1 p95 above, single uvicorn worker, handler is CPU-bound XML parsing under the GIL, so concurrent requests serialize rather than parallelize; a real finding about this server, not the eventual retriever |
-| 2026-08-31 | 0c | n/a (server load test) | `latency/ttft_ms` | 263.8 | [245.2, 276.4] | 150 | `stub-c401c89faf18` | `4bb2b5e` | concurrency=20, p95 TTFT (time to first streamed match); both p95 numbers well under the 6s/1.5s TASK_CONTRACT.md targets, expected since this is a trivial handler, not generation |
+| 2026-08-31 | 0c | n/a (server load test) | `latency/p95_ms` | 30.0 | [27.2, 35.8] | 60 | `stub-c401c89faf18` | `87ee3ac` | concurrency=1 baseline; stub keyword-match handler, not a RAG quality number, see notes below the table |
+| 2026-08-31 | 0c | n/a (server load test) | `latency/p50_ms` | 390.9 | n/a (point estimate) | 150 | `stub-c401c89faf18` | `87ee3ac` | concurrency=20, named-load test |
+| 2026-08-31 | 0c | n/a (server load test) | `latency/p95_ms` | 476.8 | [472.6, 489.1] | 150 | `stub-c401c89faf18` | `87ee3ac` | concurrency=20; ~16x the concurrency=1 p95 above, single uvicorn worker, handler is CPU-bound XML parsing under the GIL, so concurrent requests serialize rather than parallelize; a real finding about this server, not the eventual retriever |
+| 2026-08-31 | 0c | n/a (server load test) | `latency/ttft_ms` | 263.8 | [245.2, 276.4] | 150 | `stub-c401c89faf18` | `87ee3ac` | concurrency=20, p95 TTFT (time to first streamed match); both p95 numbers well under the 6s/1.5s TASK_CONTRACT.md targets, expected since this is a trivial handler, not generation |
 
-**Git SHA note:** `4bb2b5e` is the commit ("feat: add Step 0c FastAPI measurement surface, drop
+**Git SHA note:** `87ee3ac` is the commit ("feat: add Step 0c FastAPI measurement surface, drop
 Step 0d") that added `service/search.py` and `service/app.py` exactly as they were when these
 numbers were measured; nothing in the handler changed between measuring and committing.
 
@@ -160,14 +160,14 @@ the pre-registered bug threshold were logged before the run (`docs/DECISION_LOG.
 
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/ndcg@10` | 0.598 | [0.550, 0.648] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | reference 0.665, delta -0.067, **90% of reference**; within the predicted [0.55, 0.70] |
-| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/recall@100` | 0.825 | [0.782, 0.867] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | reference 0.908, delta -0.083; point estimate fell *below* the predicted [0.85, 0.91], the one sub-prediction that missed |
-| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/recall@10` | 0.718 | [0.668, 0.767] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | no published reference at this depth |
-| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/mrr` | 0.569 | [0.521, 0.620] | 300 | `cfg-0338e902ce5e` | `ea364b7`+ | full-depth MRR |
-| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/ndcg@10` | 0.288 | [0.255, 0.321] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | reference 0.325, delta -0.037, **89% of reference**; predicted point estimate was 0.29 |
-| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/recall@100` | 0.220 | [0.192, 0.250] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | reference 0.250, delta -0.030 |
-| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/recall@10` | 0.135 | [0.111, 0.160] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | low by construction: 38 relevant docs per query on average, so 10 slots cannot hold many of them |
-| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/mrr` | 0.505 | [0.454, 0.554] | 323 | `cfg-ff86812f1dc3` | `ea364b7`+ | see the note below on why MRR and recall@10 disagree this violently |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/ndcg@10` | 0.598 | [0.550, 0.648] | 300 | `cfg-0338e902ce5e` | `82684e0`+ | reference 0.665, delta -0.067, **90% of reference**; within the predicted [0.55, 0.70] |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/recall@100` | 0.825 | [0.782, 0.867] | 300 | `cfg-0338e902ce5e` | `82684e0`+ | reference 0.908, delta -0.083; point estimate fell *below* the predicted [0.85, 0.91], the one sub-prediction that missed |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/recall@10` | 0.718 | [0.668, 0.767] | 300 | `cfg-0338e902ce5e` | `82684e0`+ | no published reference at this depth |
+| 2026-09-03 | M1/A2 | SciFact (BEIR test) | `retrieval/mrr` | 0.569 | [0.521, 0.620] | 300 | `cfg-0338e902ce5e` | `82684e0`+ | full-depth MRR |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/ndcg@10` | 0.288 | [0.255, 0.321] | 323 | `cfg-ff86812f1dc3` | `82684e0`+ | reference 0.325, delta -0.037, **89% of reference**; predicted point estimate was 0.29 |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/recall@100` | 0.220 | [0.192, 0.250] | 323 | `cfg-ff86812f1dc3` | `82684e0`+ | reference 0.250, delta -0.030 |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/recall@10` | 0.135 | [0.111, 0.160] | 323 | `cfg-ff86812f1dc3` | `82684e0`+ | low by construction: 38 relevant docs per query on average, so 10 slots cannot hold many of them |
+| 2026-09-03 | M1/A2 | NFCorpus (BEIR test) | `retrieval/mrr` | 0.505 | [0.454, 0.554] | 323 | `cfg-ff86812f1dc3` | `82684e0`+ | see the note below on why MRR and recall@10 disagree this violently |
 
 **What this establishes, and what it does not.** Both nDCG@10 figures land at 89-90% of an external
 published reference, far above the 60%-of-reference bug threshold registered before the run. The
@@ -186,9 +186,9 @@ share of them into 10 slots is arithmetically close to impossible (that is recal
 either alone would badly misdescribe this retriever. That is the argument for the metric families
 below being reported together rather than a single headline retrieval number.
 
-**Git SHA caveat:** `ea364b7`+ means commit `ea364b7` plus the then-uncommitted
+**Git SHA caveat:** `82684e0`+ means commit `82684e0` plus the then-uncommitted
 `eval/ir_metrics.py`, `eval/benchmarks/run_benchmark.py`, and the `bm25.py` split of
-`index_from_paragraphs` out of `build_index`. The BM25 formula itself is unchanged from `ea364b7`
+`index_from_paragraphs` out of `build_index`. The BM25 formula itself is unchanged from `82684e0`
 (`test_bm25.py` passes unmodified across that refactor). Update these rows to the real SHA on the
 next commit, the same way the 0c rows were handled.
 
@@ -201,14 +201,14 @@ construction. **These rows supersede every `answer`-set row above.**
 
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-09-04 | M1 | answer | `baseline/no_retrieval_direction` | 0.250 | [0.07, 0.59] | 8 | `cfg-5d548c010eeb` | `ea364b7`+ | was 0.125 on the defective set |
-| 2026-09-04 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-5d548c010eeb` | `ea364b7`+ | fails by construction, no spans to cite |
-| 2026-09-04 | M1 | answer | `baseline/no_retrieval_disagreement` | 0.0 | [0.00, 0.56] | 3 | `cfg-5d548c010eeb` | `ea364b7`+ | |
-| 2026-09-04 | M1 | answer | `baseline/no_retrieval_not_found` | 0.917 | [0.65, 0.98] | 12 | `cfg-5d548c010eeb` | `ea364b7`+ | all 4 dev hold-out negatives pass; see the note on what that costs |
-| 2026-09-04 | M1 | answer | `baseline/bm25_only_direction` | 0.375 | [0.14, 0.69] | 8 | `cfg-9c6b643661a9` | `ea364b7`+ | **paired delta +12pp, McNemar exact p=1.000, 3 cases flipped.** The "exactly flat, zero flips" result is gone, see below |
-| 2026-09-04 | M1 | answer | `baseline/bm25_only_groundedness` | 0.750 | [0.41, 0.93] | 8 | `cfg-9c6b643661a9` | `ea364b7`+ | paired delta +75pp, **McNemar exact p=0.031**, 6 of 8 cases flipped to pass, 0 the other way |
-| 2026-09-04 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-9c6b643661a9` | `ea364b7`+ | paired delta +67pp, p=0.500, n=3 too small to read |
-| 2026-09-04 | M1 | answer | `baseline/bm25_only_not_found` | 0.917 | [0.65, 0.98] | 12 | `cfg-9c6b643661a9` | `ea364b7`+ | paired delta 0pp; the two baselines fail on *different* cases (1 each) |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_direction` | 0.250 | [0.07, 0.59] | 8 | `cfg-5d548c010eeb` | `82684e0`+ | was 0.125 on the defective set |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-5d548c010eeb` | `82684e0`+ | fails by construction, no spans to cite |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_disagreement` | 0.0 | [0.00, 0.56] | 3 | `cfg-5d548c010eeb` | `82684e0`+ | |
+| 2026-09-04 | M1 | answer | `baseline/no_retrieval_not_found` | 0.917 | [0.65, 0.98] | 12 | `cfg-5d548c010eeb` | `82684e0`+ | all 4 dev hold-out negatives pass; see the note on what that costs |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_direction` | 0.375 | [0.14, 0.69] | 8 | `cfg-9c6b643661a9` | `82684e0`+ | **paired delta +12pp, McNemar exact p=1.000, 3 cases flipped.** The "exactly flat, zero flips" result is gone, see below |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_groundedness` | 0.750 | [0.41, 0.93] | 8 | `cfg-9c6b643661a9` | `82684e0`+ | paired delta +75pp, **McNemar exact p=0.031**, 6 of 8 cases flipped to pass, 0 the other way |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-9c6b643661a9` | `82684e0`+ | paired delta +67pp, p=0.500, n=3 too small to read |
+| 2026-09-04 | M1 | answer | `baseline/bm25_only_not_found` | 0.917 | [0.65, 0.98] | 12 | `cfg-9c6b643661a9` | `82684e0`+ | paired delta 0pp; the two baselines fail on *different* cases (1 each) |
 
 **The headline result changed, and this is the payoff from the validation pass.** The 2026-09-03
 rows supported a confident negative claim: direction/strength was *exactly* 12.5% under both
@@ -273,20 +273,20 @@ these are not comparable to the 09-04 rows above; **they supersede them.**
 
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-09-05 | M1 | answer | `baseline/no_retrieval_direction` | 0.625 | [0.31, 0.86] | 8 | `cfg-d71b7cfa6e81` | `4ffbfd9` | **below the 75% majority-class baseline** |
-| 2026-09-05 | M1 | answer | `baseline/no_retrieval_strength` | 0.250 | [0.07, 0.59] | 8 | `cfg-d71b7cfa6e81` | `4ffbfd9` | new property, split out of direction |
-| 2026-09-05 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-d71b7cfa6e81` | `4ffbfd9` | fails by construction |
-| 2026-09-05 | M1 | answer | `baseline/no_retrieval_not_found` | 0.750 | [0.47, 0.91] | 12 | `cfg-d71b7cfa6e81` | `4ffbfd9` | |
-| 2026-09-05 | M1 | answer | `baseline/bm25_only_direction` | 0.625 | [0.31, 0.86] | 8 | `cfg-2f081d65e1b6` | `4ffbfd9` | **also below the 75% majority-class baseline**; identical to no-retrieval |
-| 2026-09-05 | M1 | answer | `baseline/bm25_only_strength` | 0.375 | [0.14, 0.69] | 8 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
-| 2026-09-05 | M1 | answer | `baseline/bm25_only_groundedness` | 0.700 | [0.40, 0.89] | 10 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
-| 2026-09-05 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
-| 2026-09-05 | M1 | answer | `baseline/bm25_only_not_found` | 0.917 | [0.65, 0.99] | 12 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
-| 2026-09-05 | M1 | answer | `baseline/oracle_spans_direction` | **1.000** | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | paired vs bm25 **+38pp**, 3 discordant all one way, McNemar p=0.250 |
-| 2026-09-05 | M1 | answer | `baseline/oracle_spans_strength` | 0.375 | [0.14, 0.69] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | **identical to BM25. Perfect retrieval does not move this one** |
-| 2026-09-05 | M1 | answer | `baseline/oracle_spans_groundedness` | 1.000 | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | |
-| 2026-09-05 | M1 | answer | `baseline/oracle_spans_disagreement` | 0.333 | [0.06, 0.79] | 3 | `cfg-a15e09ce1833` | `4ffbfd9` | lower than BM25's 0.667; n=3 |
-| 2026-09-05 | M1 | answer | `baseline/oracle_spans_not_found` | 1.000 | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_direction` | 0.625 | [0.31, 0.86] | 8 | `cfg-d71b7cfa6e81` | `5c7037f` | **below the 75% majority-class baseline** |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_strength` | 0.250 | [0.07, 0.59] | 8 | `cfg-d71b7cfa6e81` | `5c7037f` | new property, split out of direction |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-d71b7cfa6e81` | `5c7037f` | fails by construction |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_not_found` | 0.750 | [0.47, 0.91] | 12 | `cfg-d71b7cfa6e81` | `5c7037f` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_direction` | 0.625 | [0.31, 0.86] | 8 | `cfg-2f081d65e1b6` | `5c7037f` | **also below the 75% majority-class baseline**; identical to no-retrieval |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_strength` | 0.375 | [0.14, 0.69] | 8 | `cfg-2f081d65e1b6` | `5c7037f` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_groundedness` | 0.700 | [0.40, 0.89] | 10 | `cfg-2f081d65e1b6` | `5c7037f` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-2f081d65e1b6` | `5c7037f` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_not_found` | 0.917 | [0.65, 0.99] | 12 | `cfg-2f081d65e1b6` | `5c7037f` | |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_direction` | **1.000** | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `5c7037f` | paired vs bm25 **+38pp**, 3 discordant all one way, McNemar p=0.250 |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_strength` | 0.375 | [0.14, 0.69] | 8 | `cfg-a15e09ce1833` | `5c7037f` | **identical to BM25. Perfect retrieval does not move this one** |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_groundedness` | 1.000 | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `5c7037f` | |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_disagreement` | 0.333 | [0.06, 0.79] | 3 | `cfg-a15e09ce1833` | `5c7037f` | lower than BM25's 0.667; n=3 |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_not_found` | 1.000 | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `5c7037f` | |
 
 **The 2026-09-04 finding does not survive, but the cross-run comparison is CONFOUNDED and the
 first version of this paragraph over-attributed it.** Oracle spans scored 3/8 on direction under
@@ -386,10 +386,10 @@ so this scores the 8 non-negative dev cases. Method, prediction and the blocker 
 
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_groundedness` | 1.000 | [0.68, 1.00] | 8 | `cfg-be9db797fd63` | `4ffbfd9` | paired vs bm25_only +25pp, 2 discordant, p=0.500 |
-| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_not_found` | 1.000 | [0.68, 1.00] | 8 | `cfg-be9db797fd63` | `4ffbfd9` | extended check; BM25's one wrong refusal (a retrieval miss) disappears, as predicted |
-| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_direction` | 0.375 | [0.14, 0.69] | 8 | `cfg-be9db797fd63` | `4ffbfd9` | **identical to bm25_only's 0.375. +0pp, though 4 of 8 cases flipped verdict, p=1.000** |
-| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_disagreement` | 0.333 | [0.06, 0.79] | 3 | `cfg-be9db797fd63` | `4ffbfd9` | *lower* than bm25_only's 0.667; n=3, unreadable alone, but see the note below |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_groundedness` | 1.000 | [0.68, 1.00] | 8 | `cfg-be9db797fd63` | `5c7037f` | paired vs bm25_only +25pp, 2 discordant, p=0.500 |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_not_found` | 1.000 | [0.68, 1.00] | 8 | `cfg-be9db797fd63` | `5c7037f` | extended check; BM25's one wrong refusal (a retrieval miss) disappears, as predicted |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_direction` | 0.375 | [0.14, 0.69] | 8 | `cfg-be9db797fd63` | `5c7037f` | **identical to bm25_only's 0.375. +0pp, though 4 of 8 cases flipped verdict, p=1.000** |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_disagreement` | 0.333 | [0.06, 0.79] | 3 | `cfg-be9db797fd63` | `5c7037f` | *lower* than bm25_only's 0.667; n=3, unreadable alone, but see the note below |
 
 **What this settles, narrowed after the 2026-09-05 correction below.** The flat-direction result
 has been the project's central puzzle since 2026-09-02, and it was always ambiguous: BM25 might
@@ -454,6 +454,20 @@ formally dropped." What these numbers establish is that the measurement mechanis
 real concurrent HTTP requests, real streaming, a real p95/TTFT/CI computation off the live server.
 That mechanism, not these values, is what M1 onward reuses once a real retriever/generator exists
 to measure.
+
+> ### Git SHA note (2026-09-05): history rewritten, and two SHAs that never existed
+>
+> The `Co-Authored-By` trailers were stripped from five commit messages, which rewrote every
+> commit in this repository. Content is unchanged (the tree hash is identical) but every SHA moved.
+> The SHAs in the tables above have been remapped: `4bb2b5e` to `87ee3ac`, `ea364b7` to `82684e0`,
+> `4ffbfd9` to `5c7037f`.
+>
+> **Two cited SHAs, `c062228` and `57d356d`, were never in this repository's history at all.** They
+> appear on the 2026-09-02 and 2026-09-03 baseline rows and cannot be checked out. This predates
+> the rewrite and is a real reproducibility gap in exactly the way rule 4 exists to prevent: those
+> rows carry a SHA-shaped string that resolves to nothing. The runs happened, the numbers are real,
+> and their exact code state is not recoverable. Left visible rather than quietly deleted; the rows
+> they sit on are already marked superseded.
 
 ## Metric families
 
