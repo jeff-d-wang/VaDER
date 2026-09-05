@@ -58,7 +58,7 @@ Everything runs as a module from the repo root, so there are no `sys.path` shims
 dependence on which directory you happen to be in:
 
 ```
-python run_tests.py                                    # every test module, 19 of them
+python -m unittest discover                            # every test, 203 of them
 python -m eval.score --answers runs/x.jsonl --judge groq
 python -m eval.benchmarks.run_benchmark --dataset scifact
 uvicorn service.app:app --port 8000

@@ -7,7 +7,7 @@ that keeps the gold labels honest.
 
 ```
 python -m eval.score --answers runs/bm25_only_answers.jsonl --judge groq
-python run_tests.py                     # every test module in the project
+python -m unittest discover             # every test in the project
 ```
 
 ## Layout
@@ -15,14 +15,14 @@ python run_tests.py                     # every test module in the project
 | Path | What it is |
 |---|---|
 | `data/` | the eval set itself: `answer_cases.jsonl`, the dev/held-out split, the touch log |
-| `score.py`, `judge.py` | the scorer and the LLM judge behind it, four sub-scores per case |
+| `score.py`, `judge.py`, `labels.py` | the scorer, the LLM judge behind groundedness and disagreement, and the controlled vocabulary that grades direction/strength in code |
 | `split.py` | dev/held-out enforcement, with a touch log that makes exposure visible |
-| `baselines/` | the generators the scorer grades: no-retrieval, BM25-only |
+| `baselines/` | the generators the scorer grades: no-retrieval, BM25-only, oracle-span. `_runner.py` holds the shared prompt and citation mapping |
 | `benchmarks/` | SciFact and NFCorpus, for checking the harness against known-good labels |
 | `find_coverage.py`, `hold_out_case.py`, `mine_rare_variants.py` | building cases |
 | `verify_spans.py`, `check_gold_claims.py`, `verify_negative_cases.py` | keeping cases honest |
 | `make_case_worksheet.py` | putting cases in front of a human to validate |
-| `kappa.py`, `make_kappa_worksheet.py`, `run_kappa_calibration.py` | judge calibration |
+| `kappa.py` | judge calibration statistic |
 | `compare_runs.py` | paired McNemar between two scored runs |
 | `held_out/` | articles physically removed from the corpus to make negative cases true |
 | `runs/`, `_archive/` | generated outputs (git-ignored); retired cases kept for the trail |
@@ -172,7 +172,8 @@ one that is half wrong. Fields:
 | `gene`, `variant`, `condition` | the subject of the query; `variant` optional |
 | `query` | free text, as a user would type it |
 | `gold_spans` | list of `{pmcid, section, char_start, char_end}`, the `(pmcid, section_id, char_start, char_end)` schema `CLAUDE.md` requires. Empty for negative cases. |
-| `gold` | stratum-dependent. Evidence: `{direction, strength, has_disagreement, disagreement_note, expected_not_found}`. Methods-extraction: `{parameter, expected_value}`. |
+| `gold` | stratum-dependent. Evidence: `{direction, strength, strength_detail, qualifier, has_disagreement, disagreement_note, expected_not_found}`. `direction` and `strength` are **closed vocabularies** (see `labels.py`); `strength_detail` and `qualifier` are free text and **not scored**. Methods-extraction: `{parameter, expected_value}`. |
+| `earliest_evidence_year` | derived by `strata.py` from the Step 0b manifest: the earliest year among the articles the answer rests on. Used for date stratification. |
 | `held_out_pmcids` | for negative cases only, must match `held_out/held_out_pmcids.csv` exactly |
 | `notes`, `created_by`, `created_at_utc` | provenance; `created_by` is `"user"` or `"agent:<name>"` so you can tell which cases need a second read |
 
@@ -436,32 +437,155 @@ now nearest-preceding-symbol within 60 characters, with the distance reported so
 visible, and `test_mine_rare_variants.py` pins all four real misattributions as regressions. It is
 still a hint: read the source for any candidate before building a case on it.
 
-### kappa.py, make_kappa_worksheet.py, run_kappa_calibration.py: judge calibration
+### labels.py: the direction and strength vocabularies
+
+`direction` and `strength` are **closed vocabularies graded in code, not by a judge** (since
+2026-09-05; see `docs/DECISION_LOG.md`, "direction property redesign").
+
+| Field | Values |
+|---|---|
+| `direction` | `increased`, `decreased`, `none`, `mixed` — exact match, no partial credit |
+| `strength` | `high`, `moderate`, `low`, `none`, `disputed`, `unstated` — one tier off on low<moderate<high is `partial`, everything else is `fail` |
+
+Why it changed: gold used to be free text, and eleven evidence cases carried nine distinct
+`direction` strings (`'mixed'` and `'mixed_evidence'` being the same concept twice) while four
+`strength` values contained no strength at all, just cohort descriptions and bare percentages. A
+finding was published off that property and then withdrawn. Removing the judge here also ends the
+same model grading its own output on the two properties where that mattered most; the judge still
+handles groundedness and disagreement, where free text has to be read.
+
+**Two rules the strength labels follow**, both learned the hard way in the 2026-09-05 review that
+found 45% of the first pass wrong:
+
+1. **`disputed` means the sources conflict on *magnitude*, not on direction.** If no source reports
+   an effect size, they cannot conflict about it, and the value is `unstated`. Direction-level
+   disagreement is already carried by `direction: mixed` and the disagreement property.
+2. **Strength is read at the granularity the query asks about.** A gene-level query takes the
+   source's gene-level claim; a variant-level query takes that variant's reported effect. Numbers
+   at the other granularity belong in `strength_detail`. See `docs/DECISION_LOG.md`, "strength is
+   matched to the granularity of the query", including the cost of the rule.
+
+Also worth stating because it caused two of the five errors: a **prevalence is not an effect size**
+(4-7% of patients carrying a mutation says nothing about magnitude, so that is `unstated`), and a
+pair of raw percentages needs the **ratio computed** before it is placed on the scale (67-83% vs
+16-25% is roughly 3-4x, which is `moderate`, not `high`).
+
+The detail that used to be crammed into `strength` now lives in two **unscored** fields:
+`strength_detail` (odds ratios, prevalences, cohort sizes) and `qualifier` (modifiers like
+"HER2-positive subtype specifically" or "prognostic, not susceptibility"). They are preserved for a
+human reader and for `check_gold_claims.py`, which scans `strength_detail` but deliberately not
+`qualifier`, since the years and subtype names in a qualifier are not quantitative claims.
+
+**Read every direction number against the majority-class baseline.** The set is currently 8 of 11
+`increased`, so a system that always answers "increased" scores 73%. `score.py` prints that
+baseline under the direction line so the number cannot be quoted without it. The fix is more
+`none`, `decreased` and `mixed` cases, not a different metric.
+
+### baselines/oracle_spans.py: perfect retrieval, as a control
+
+Phase A3. Supplies exactly the case's gold spans as context, so retrieval is perfect by
+construction, with the same model, prompt shape and citation mechanism as `bm25_only`. The only
+variable between the two runs is which passages reached the model.
+
+It stands in for `PROJECT_PLAN.md`'s whole-document-in-context baseline, which is blocked on Groq's
+free tier: gold articles run 3k-20k tokens against a hard 8,000 TPM per-request ceiling, and a
+probe returned HTTP 413. See `docs/DECISION_LOG.md` for the measurement and the alternatives.
+
+```
+python -m eval.baselines.oracle_spans --out eval/runs/oracle_spans_answers.jsonl
+python -m eval.score --answers eval/runs/oracle_spans_answers.jsonl --judge groq --out eval/runs/oracle_spans_scores.json
+python -m eval.compare_runs --a eval/runs/bm25_only_scores.json --b eval/runs/oracle_spans_scores.json \
+    --label-a bm25_only --label-b oracle_spans
+```
+
+Result: groundedness and refusal go to 100%, and **direction does not move at all** (3/8 both
+ways), so retrieval is not what limits the direction score. Read the correction in
+`docs/RESULTS.md` before going further than that sentence: an initial reading of *why* direction
+fails was withdrawn on 2026-09-05, because most of those failures turned out to be artifacts of an
+under-specified direction property rather than reading failures.
+
+### strata.py: date stratification
+
+`docs/RESULTS.md` requires the no-retrieval baseline to always be reported per date-stratum,
+because PMC full text is in every model's pretraining and a good no-retrieval score may just be
+memorization. This derives each case's `earliest_evidence_year` from the immutable Step 0b manifest
+and reports the split.
+
+```
+python -m eval.strata                # report the distribution
+python -m eval.strata --annotate     # write earliest_evidence_year into the cases
+```
+
+A case's year is the **earliest** article its answer rests on, not the latest: if any supporting
+article predates the cutoff, memorization is possible, so a case is post-cutoff only when
+everything it rests on is. The cutoff is a parameter, not a hardcoded claim; `gpt-oss-120b`'s
+training cutoff is not published anywhere citable.
+
+On the current set the post-cutoff stratum holds **1 case**, so the rule is not computable and the
+tool says so rather than printing a rate. Growing the answer set should deliberately target
+post-2024 articles until that stratum reaches 5.
+
+### kappa.py: judge calibration
 
 `PROJECT_PLAN.md` M1: "Measure Cohen's kappa between judge and you on a sample... If kappa comes
-back low, the rubric is underspecified, not the judge." This is the one M1 step that has to be run
-by a real person, not built or faked, an LLM judge grading its own calibration would defeat the
-entire point. The workflow:
+back low, the rubric is underspecified, not the judge." `kappa.py` is the hand-built statistic:
+unweighted and linearly-weighted Cohen's kappa, weighted because the rubric's pass/partial/fail
+scale is ordinal, so a pass-vs-partial miss should count less than pass-vs-fail. Feed it two
+same-order lists of verdicts.
 
-1. `python -m eval.make_kappa_worksheet --answers runs/bm25_only_answers.jsonl --out kappa_worksheet.md`
-   generates a blind worksheet (dev split only, by default): each case's query, gold label, the
-   system's answer, and every cited claim resolved to its real source text, so groundedness is
-   checkable by reading the actual span. The judge's own verdict is never shown anywhere in it.
-2. A human fills in the `___` blanks with their own pass/partial/fail per property, same rubric the
-   judge used.
-3. `python -m eval.run_kappa_calibration --worksheet kappa_worksheet.md --judge-scores runs/bm25_only_scores.json`
-   parses the filled-in verdicts, pairs them against the judge's stored verdicts for the same
-   case/property, and reports both unweighted and linearly-weighted Cohen's kappa (`kappa.py`,
-   hand-built, weighted because the rubric's pass/partial/fail scale is ordinal, a pass-vs-partial
-   miss should count less than pass-vs-fail, see the module docstring for the derivation of the
-   test values).
+The worksheet generator and worksheet parser that used to sit alongside it were deleted
+2026-09-05. Two of the four properties they calibrated (`direction`, `strength`) are now graded in
+code by `labels.py` and have no judge left to calibrate, the human calibration is deliberately
+skipped for M1 (`docs/DECISION_LOG.md`), and `make_case_worksheet.py` already renders and parses
+worksheets of both shapes. Recover them from git history if a real person sits down to rate.
 
-The worksheet is git-ignored (`eval/kappa_worksheet*.md`), it's a working document tied to one
-specific answers file, not a durable artifact; a real calibration result goes in
-`docs/DECISION_LOG.md`/`docs/RESULTS.md` once it exists, same as everything else measured here.
-Re-labeling a sample a week later (PROJECT_PLAN.md's self-agreement ceiling, "no judge can beat
-it") reuses the same worksheet generator and comparison tool, just judge-scores swapped for a
-second worksheet's own answers.
+## TODO: growing the answer set
+
+**Not started, and deliberately not started.** The set is 17 cases against `PROJECT_PLAN.md`'s
+50-80 target, and n=8 on the scored properties means one case is 12.5 points. That is the obvious
+thing to fix and it is the wrong thing to fix next, because the binding constraint here is label
+correctness, not count.
+
+**The measured base rate for unreviewed labels in this project is about half.** Agent-built gold,
+phase A1: 4 of 8 defective. The strength labels an agent assigned on 2026-09-05: 5 of 11 wrong.
+Two corrected labels out of eight then flipped a published conclusion. **A larger set of unreviewed
+labels is strictly worse than the small reviewed one.** Label error does not average out with n the
+way sampling error does: a systematic mistake ("a prevalence is an effect size") repeats on every
+case that shares its shape.
+
+So: grow the set only in a session where a human is also reviewing. When you do:
+
+1. **Target the gaps, not the easy cases.** Two composition requirements are already measured:
+   - **Class balance.** Direction gold is currently 8 `increased` to 3 `mixed`, so the
+     majority-class baseline is 75% and a system that always answers "increased" beats both real
+     retrieval baselines. Build `none` and `mixed` cases. `eval/runs/polarity_candidates.csv` has
+     84 mined candidates, high recall and low precision, and a caveat worth reading first: most
+     `decreased` hits are about modifiers (parity, oophorectomy, early pregnancy) rather than the
+     variant, so `decreased` may be close to unpopulatable in a corpus of cancer-predisposition
+     genes. Prefer `none`; the clean ones there are PMC9501803 and PMC5200636.
+   - **Date stratification.** Only 1 of 8 scored dev cases is post-2024, so `RESULTS.md`'s
+     per-stratum rule is uncomputable and the memorization question stays unanswered. Sample
+     post-2024 articles deliberately until that stratum reaches 5. `python -m eval.strata` reports
+     where it stands. 1,569 corpus articles are post-2024, so the material exists.
+2. **Write the case**, following "The eval case format" above and the `labels.py` vocabularies.
+   Two rules that caused most of the known label errors: `disputed` means the sources conflict on
+   *magnitude* (no effect size reported means `unstated`, not `disputed`), and strength is read at
+   the granularity the query asks about.
+3. **Run the three mechanical checks**, all fast:
+   `python -m eval.verify_spans`, `python -m eval.check_gold_claims`,
+   `python -m eval.verify_negative_cases`.
+4. **Put it in front of a person.** `python -m eval.make_case_worksheet --focus strength` for the
+   labels, plain `--focus case` for whole-case validity, then
+   `python -m eval.make_case_worksheet --summarize <worksheet>`. A case is not usable until its
+   labels have been reviewed; record that in `validated_by` / `strength_validated_by`, next to
+   `created_by`, so a future reader can tell which cases were checked.
+5. **Assign the split** with `python -m eval.split assign --seed 0`, which places new cases only.
+6. **Re-run the baselines and supersede the rows** in `docs/RESULTS.md`. Changing the set changes
+   every number computed against it.
+
+Rough cost, from the two passes done so far: about 2 minutes of review per label, plus the
+authoring time. The review is the part that cannot be delegated to an agent, which is the whole
+reason this is a TODO and not a task an agent should quietly pick up.
 
 ## Handing this to another agent
 

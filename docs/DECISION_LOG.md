@@ -1388,3 +1388,533 @@ Phases, each ending in a number. Full statement in `PROJECT_PLAN.md`, "Tier 1 ex
 
 - **Reversibility:** cheap in principle (the moves are renames and the import rewrite was
   mechanical), but there is no reason to: nothing about the old layout was load-bearing.
+
+---
+
+## Experiment: oracle-span baseline (A3), and why it is not the whole-document baseline the plan asked for
+
+- **Date / module:** M1 / phase A3 (2026-09-04). Logged before building or running anything.
+- **What A3 was supposed to be.** `PROJECT_PLAN.md` M1 names three baselines: no-retrieval,
+  BM25-only, and **whole-document-in-context**. The first two are done. The third was kept for last
+  because it is the experiment that separates a *retrieval* failure from a *reading* failure, and
+  after the phase A1 repair turned the direction finding from "flat" into "unknown at n=8," that
+  separation became the most valuable thing left in phase A.
+- **Why it cannot be run as specified.** Measured, not assumed: the eight non-negative dev cases'
+  gold articles run 13k to 79k characters, roughly 3k to 20k tokens. Groq's free tier caps
+  `openai/gpt-oss-120b` at **8,000 tokens per minute**, and this is a hard per-request ceiling, not
+  a throttle. A probe with the largest article returned **HTTP 413**: "Request too large ... Limit
+  8000, Requested 19672." Checking every model on the account, all four plain chat models cap at
+  8,000 TPM. Only `groq/compound` allows 70,000, and it is an agentic system with built-in web
+  access, which would break the task contract's "answer from this corpus" boundary and confound
+  the result with tool use. So whole-document-in-context is **blocked on the free tier**, not
+  merely slow.
+- **Options considered, and why the substitute wins:**
+  - *Truncate each document to fit under 8k.* Only 3 of the 8 cases fit intact. Truncating the
+    other 5 destroys the premise, since the point of a whole-document baseline is that the model
+    has everything and does not have to find the passage.
+  - *Run it on the reserved paid budget* (`DECISION_LOG.md`, "Model & embedding stack" set aside
+    $10-20 on a pinned paid model). Affordable in dollars, but it introduces a **model confound**:
+    a whole-doc run on a different model compared against BM25-only on `gpt-oss-120b` conflates
+    context with capability. Doing it cleanly means re-running all three baselines on the paid
+    model. That is a real option, deferred to the user rather than spent unilaterally.
+  - *Oracle-span baseline instead*, chosen for now: supply exactly the case's **gold spans** as
+    numbered excerpts, same prompt shape, same citation mechanism and same model as BM25-only, so
+    the only variable is which passages reached the model.
+- **Why the substitute is arguably the better instrument for A3's actual question.** Whole-document
+  still asks the model to locate the passage inside a long article, which is itself a
+  retrieval-like task, so a failure there is ambiguous between finding and reading. Oracle-span
+  removes that ambiguity: the model is handed the exact passage a correct answer must rest on. If
+  direction is still wrong with the supporting text in front of it, that is a reading and synthesis
+  failure with nothing else it can be. It answers "should phase D optimize retrieval or
+  generation" more sharply than the planned baseline would. What it does **not** answer is the
+  plan's other question, whether long-context stuffing can replace chunked retrieval; that stays
+  open and belongs with the paid-model decision above.
+- **Prediction (before running):**
+  - *Groundedness:* rises to 0.875-1.0 from BM25's 0.75. The supporting passage is present by
+    construction, so the remaining failure mode is the model citing carelessly rather than the
+    evidence being absent.
+  - *not_found (extended check on non-negative cases):* 8/8 pass, up from BM25's 7/8. There is no
+    honest reason to refuse when handed the supporting passage; BM25's one wrong refusal
+    (`tp53_chondrosarcoma_survival_ord_001`) was a retrieval miss and should disappear.
+  - *Direction, the actual question:* rises to roughly **5/8 (62%)** from BM25's 3/8 (37.5%). The
+    reasoning behind the number: some BM25 direction failures should be retrieval misses that
+    perfect passages fix, but I expect a real residue of synthesis failures, because the phase A1
+    repair showed the model getting direction wrong on cases whose gold span it had cited
+    correctly. I am predicting a partial fix, not a full one.
+- **Minimum detectable effect, and the honest consequence:** n=8 for direction and groundedness,
+  n=3 for disagreement. A paired McNemar test at n=8 needs roughly **6 discordant pairs all falling
+  the same way** to clear p<0.05. My predicted direction delta is 2 cases. **This run is therefore
+  inconclusive by construction as a significance test, and I know that before running it.** It is
+  being run anyway for a stated and different reason: the per-case pattern of which cases flip, and
+  why, is the raw material M4 error analysis needs, and it costs a handful of free-tier calls. Any
+  delta it produces will be reported as a diagnostic observation, not as a measured effect, and no
+  claim in `RESULTS.md` will rest on its p-value.
+- **Result:** rows in `docs/RESULTS.md`, "Oracle-span baseline (A3)". Paired against BM25-only on
+  the same 8 non-negative dev cases:
+
+  | Property | bm25_only | oracle_spans | paired |
+  |---|---|---|---|
+  | groundedness | 6/8 (75%) | **8/8 (100%)** | +25pp, 2 discordant, p=0.500 |
+  | not_found (extended) | 7/8 (88%) | **8/8 (100%)** | +12pp, 1 discordant, p=1.000 |
+  | direction | 3/8 (38%) | **3/8 (38%)** | +0pp, **4 cases flipped**, p=1.000 |
+  | disagreement | 2/3 (67%) | 1/3 (33%) | -33pp, n=3, unreadable |
+
+- **Did the prediction hold?** Two of three held; the one that mattered was **wrong**.
+  - *Groundedness:* predicted 0.875-1.0, came in at **1.00**, the top of the range. Held.
+  - *not_found:* predicted 8/8 and named the case that should stop failing
+    (`tp53_chondrosarcoma_survival_ord_001`, a BM25 retrieval miss). It did. Held exactly.
+  - *Direction:* predicted a rise to roughly 5/8 on the reasoning that some BM25 direction failures
+    were retrieval misses perfect passages would fix. **It did not move at all: 3/8 both ways.**
+    I predicted a partial fix and got none. Note this is not the same as "nothing changed": four of
+    eight cases flipped verdict, two each way, so the net zero is churn rather than stability, and
+    at n=8 the rate itself is noise.
+- **The finding, which is stronger than the flat-rate number looks.** The previous flat-direction
+  result was ambiguous, because BM25 might simply have failed to retrieve the right passage. This
+  run removes that explanation by construction: the model was handed the exact gold span, scored
+  100% on citing it correctly and 100% on not refusing, **and still got direction/strength right
+  only 3 times in 8.** Perfect retrieval fixes grounding and refusal and does nothing for reading.
+  Whatever is wrong with direction is downstream of retrieval.
+- **What the failures actually are: WITHDRAWN 2026-09-05, see the correction below.** This bullet
+  originally named two buckets, *strength overstatement (3 of 8)* and *disagreement collapse
+  (2 of 8)*, and claimed neither was a retrieval problem. It was derived from the judge's free-text
+  rationales without reading the system answers underneath. It does not survive reading them.
+- **CORRECTION (2026-09-05), and it is the same mistake this project keeps catching.** I asserted a
+  conclusion one layer more specific than the layer I actually checked, exactly the "citation
+  drift" shape found in the gold set during phase A1, this time committed by me against the judge's
+  output instead of by an agent against a source article. What reading the answers shows:
+  - `atm_variants_controversy_disagree_001`, graded `fail` for contradicting gold "mixed_evidence",
+    has an `answer_text` reading "the evidence is **mixed and considered controversial**, with the
+    overall role of ATM as a breast cancer gene described as uncertain." It reported the
+    disagreement. It put it in `answer_text` and `strength` rather than the `direction` field.
+  - **The mechanism is structural and lives in the scorer.** `score_direction` passes the judge
+    only `gold.direction`, `gold.strength`, `answer.direction` and `answer.strength`. **It never
+    passes `answer_text`.** A system that hedges correctly in prose is graded as if it had not.
+  - `brca2_pancreatic_risk_ord_001`: gold and system direction are both "increased risk", an exact
+    match, graded `partial` on a strength difference between "background association; approximately
+    4-7%" and "moderate evidence (4-7% prevalence)", which cite the same figure.
+  - `atm_at_lymphoid_tumor_ord_001`: gold `strength` is "cohort of 296 genetically confirmed A-T
+    patients ... 66 developed a malignant tumour", a **cohort description, not a strength**. The
+    system was marked down for saying "substantial protective effect observed", the source's own
+    phrase, instead of reciting cohort sizes.
+  - **Root cause:** the gold label vocabulary is uncontrolled free text. Eleven evidence cases carry
+    **nine distinct `direction` strings**; `'mixed'` and `'mixed_evidence'` are the same concept
+    written twice; `strength` mixes effect sizes, cohort descriptions and provenance with no scale.
+    This also re-explains the direction kappa of 0.216 recorded on 2026-09-03, which was attributed
+    to the judge at the time. The judge is not the main problem. The label space is.
+- **What survives the correction:** the numbers, and one narrower claim. Handed the exact gold span
+  the system grounds and refuses perfectly and scores 3/8 on direction, so **retrieval is not what
+  limits the direction score**. Everything beyond that, in particular any statement about *why*
+  direction fails or what the failure buckets are, is on hold until the property is redesigned.
+- **What changed because of this:**
+  1. **Phase D's target moves from retrieval to generation.** The lean-v1 plan assumed the next
+     wins were retrieval-side (dense, hybrid, reranking). On this evidence those will buy
+     groundedness the system already has at 100% under perfect retrieval, and will not touch the
+     property it actually fails. Context engineering and the answer prompt (M7) are now the better
+     next lever. Not reordering the plan on n=8, but flagging it loudly for phase F to settle.
+  2. ~~Two named failure buckets exist before M4 starts.~~ **Withdrawn 2026-09-05**, see the
+     correction above. No failure taxonomy comes out of this run. What comes out instead is a
+     defect in the eval instrument, which is more useful and less flattering.
+  3. **The whole-document baseline the plan asked for is still open**, and now cheaper to justify:
+     the interesting question it would answer (can long-context stuffing replace retrieval) is
+     separate from the one this run settled. It needs a paid model or a higher-tier key; the
+     decision is the user's and is recorded above, not taken here.
+
+---
+
+## Design decision: date stratification built, and the standing rule reported as not computable
+
+- **Date / module:** M1 / phase A4 (2026-09-04).
+- **The rule being addressed.** `docs/RESULTS.md` requires `baseline/no_retrieval` to **always** be
+  reported per date-stratum, because "the pooled number conflates retrieval lift with
+  memorization." PMC full text is in every model's pretraining, so a no-retrieval baseline that
+  scores well may only mean the model read the paper during training. **No row has ever obeyed
+  this rule**, which the v4 audit flagged as finding 5.
+- **Decision:** build the stratification (`eval/strata.py`, tested), annotate every case with
+  `earliest_evidence_year`, run it, and then **report that the rule is not computable on the
+  current eval set** rather than printing a per-stratum rate that would not mean anything.
+- **How a case gets its year:** the **earliest** publication year among the articles its answer
+  rests on (its gold spans; for a negative case, the article held out to make it negative).
+  Earliest rather than latest because the question is whether memorization is possible: if any
+  supporting article predates the cutoff the model may have seen the answer, so a case counts as
+  post-cutoff only when everything it rests on does.
+- **The cutoff is an assumption and is not hardcoded as a fact.** `openai/gpt-oss-120b`'s training
+  cutoff is not published anywhere this project can cite. `--cutoff` defaults to 2024 (post-cutoff
+  means 2025+) and the report prints the full per-case year distribution so any other cutoff can be
+  applied by eye. Committing to a specific cutoff as though it were known would be the kind of
+  quiet unsupported claim this log exists to prevent.
+- **The measurement:** of the 8 non-negative dev cases that direction and groundedness are actually
+  scored on, **7 are pre-cutoff and 1 is post-cutoff** (`tp53_chondrosarcoma_survival_ord_001`,
+  2026). The result is identical at a 2023 or 2025 cutoff. A pass rate over a single case is an
+  anecdote; `strata.py` refuses to present one, using a `MIN_STRATUM_N` of 5, justified by the
+  Wilson interval at n<5 spanning more than half of [0,1].
+- **Why this is a finding rather than a failure.** It is a statement about the eval set, not the
+  corpus: **1,569 corpus articles are post-2024**, about 20% of the snapshot, so the material for a
+  real post-cutoff stratum exists and the gap is labeling effort. The honest position is that the
+  memorization question `PROJECT_PLAN.md`'s statistical rule 4 exists to answer **cannot be
+  answered by this project yet**, and saying so is better than reporting `n=1` in a table and
+  letting it read as a stratum.
+- **A pattern worth keeping:** the six hold-out negative cases skew recent (four are 2025-2026),
+  because the document-frequency-1 mining that finds hold-out candidates naturally surfaces
+  recently-reported variants. So the *negative* stratum is already mostly post-cutoff even though
+  the evidence stratum is not. That is a free hint for whoever builds post-cutoff evidence cases:
+  the same mining tool points at recent material.
+- **Alternatives considered:**
+  - *Report the 7/1 split anyway, with a caveat.* Rejected. A caveat under a number does not stop
+    the number being quoted, and this project has already been burned once by over-reading a small
+    sample (the direction finding, phase A1).
+  - *Lower the cutoff until the strata balance.* Rejected outright, and worth naming as the
+    tempting mistake: choosing the cutoff to produce a usable split is choosing the answer.
+- **What changed because of this:** the eval-set growth requirement now has a specific shape.
+  Whoever adds answer cases should deliberately sample post-2024 articles until the post-cutoff
+  stratum reaches at least 5, rather than sampling for topic alone. Recorded here and in
+  `START_HERE.md` so it is not rediscovered later.
+- **Reversibility:** free. `earliest_evidence_year` is derived from the immutable Step 0b manifest
+  and can be recomputed at any time with `python -m eval.strata --annotate`.
+
+---
+
+## Design decision: direction property redesign, controlled vocabulary and no judge
+
+- **Date / module:** M1 (2026-09-05), logged before building. Both choices confirmed with the user
+  first, since `CLAUDE.md` makes the scorer a discussion rather than a handoff.
+- **What forced it.** The A3 correction (entry above) traced a withdrawn finding to the direction
+  property itself. Eleven evidence cases carried **nine distinct `direction` strings**, `'mixed'`
+  and `'mixed_evidence'` being the same concept written twice. **Four of eleven `strength` values
+  contain no strength at all**: a cohort description ("cohort of 296 genetically confirmed A-T
+  patients"), a methodology note ("independent predictor in multivariable analysis, n=109"), and
+  two bare percentage pairs. `'moderate'` was used for three disagreement cases where the honest
+  value is "disputed". A property specified this loosely cannot be measured, which is the real
+  explanation for the 0.216 direction kappa previously blamed on the judge.
+- **Decision, three parts:**
+  1. **`direction` becomes a closed 4-value vocabulary:** `increased`, `decreased`, `none`,
+     `mixed`. Graded by exact match.
+  2. **`strength` becomes a closed scale:** `high`, `moderate`, `low`, `none`, `disputed`,
+     `unstated`, with `low < moderate < high` ordinal so an off-by-one-tier miss scores `partial`
+     and anything else `fail`. The quantitative detail that used to live in this field (odds
+     ratios, prevalences, cohort sizes) moves to a new **unscored** `strength_detail`.
+  3. **Modifiers move to a new unscored `qualifier`** field: "with higher polygenic risk score",
+     "HER2-positive subtype specifically", "prognostic, not susceptibility", "population-dependent".
+     Seven of eleven cases carry one.
+  **Direction and strength are also split into two separately reported properties**, where they
+  used to be conflated into one verdict. A right-direction/wrong-strength answer was previously
+  indistinguishable from a wrong-direction answer in the pass rate, since `partial` collapses to
+  not-pass.
+- **The judge is removed from both properties.** With a closed vocabulary these are exact and
+  ordinal matches computed in code: fully reproducible, zero judge noise, and it ends **the same
+  model grading its own output** on the two properties where that mattered most. The judge stays
+  for groundedness and disagreement, where free text genuinely has to be read. This costs a prompt
+  change in all three baselines to emit vocabulary values, which is a fair ask and is how a
+  structured product endpoint would work anyway.
+- **Alternatives considered:**
+  - *Five values including `conditional`.* Rejected: 4 of 11 cases would land there and the
+    boundary against `mixed` is genuinely blurry (is population-dependent conditional or mixed?).
+    Blurry boundaries are what produced the 0.216 kappa; adding another would repeat the mistake.
+  - *Keep free text and only pass `answer_text` to the judge.* Rejected as too small. It fixes the
+    one case where the model hedged correctly in prose and leaves nine strings across eleven cases.
+- **A problem this creates, recorded now rather than discovered later: class imbalance.** Under the
+  new vocabulary **8 of 11 evidence cases map to `increased`**. A system that always answers
+  "increased" scores 73% on direction, better than the current measured 37.5%. Raw accuracy on this
+  property is therefore close to meaningless, and `PROJECT_PLAN.md` M1 already warns that class
+  imbalance inflates apparent agreement. Two consequences, both adopted:
+  1. Every direction number will be reported **alongside a majority-class baseline** ("always say
+     increased"), so the reader can see what the score is worth.
+  2. Growing the answer set now has a second composition requirement to sit beside the post-cutoff
+     one from A4: deliberately build `none`, `decreased` and `mixed` cases. A property whose gold is
+     73% one class cannot discriminate.
+- **Reversibility:** moderate. The vocabulary migration rewrites gold on 11 cases and the old
+  free-text values are preserved in `strength_detail` and `qualifier` rather than deleted, so the
+  prior labels remain readable. Re-running the baselines under the new scorer is the real cost, and
+  it is the same cost as any rubric change.
+
+**Outcome (2026-09-05, same day).** All three baselines re-run under the new vocabulary and the
+deterministic scorer. Numbers in `RESULTS.md`, "Redesigned direction/strength properties."
+
+- **The A3 finding does not survive, but this comparison is CONFOUNDED and I over-attributed it in
+  the first draft of this entry.** Oracle spans scored 3/8 then 8/8, but **two things changed at
+  once**: the scorer, and the prompt (v2 constrains the model to four values, an easier task than
+  free text). `no_retrieval`, whose context is identical across both runs, went 0.250 to 0.625, so
+  a large share of the movement is the instrument rather than the system. The clean evidence is
+  *within* the 09-05 run, where all three baselines share prompt v2: oracle 1.000 vs BM25 0.625,
+  +38pp, 3 discordant, p=0.250. Isolating scorer from prompt would need a v2-prompt run scored the
+  old way, which has not been done. **The process failure here is mine and is the one this project
+  has a rule against: I re-ran an experiment without logging a prediction first**, and changed two
+  variables in the same run.
+- **Splitting strength out is what made the real failure visible.** Strength is 0.375 for BM25 and
+  **0.375 for oracle spans**, identical. Perfect passages move direction from 62.5% to 100% and
+  move strength not at all. The reading failure this project has been chasing was real, but it was
+  in strength, and the conflated property was hiding it behind direction.
+- **The class-imbalance warning logged above immediately paid off.** The majority-class baseline is
+  75%, and both no-retrieval and BM25 score 62.5%, **worse than always answering "increased."**
+  Without that baseline printed alongside, 62.5% would have read as mediocre-but-real performance
+  instead of worse-than-trivial.
+- **The characteristic error, read off deterministic verdicts rather than judge prose:** three of
+  five strength non-passes are the system asserting a definite magnitude where gold has none,
+  `high` against `disputed` twice and `moderate` against `unstated` once. It overstates how
+  well-established a magnitude is, most clearly where sources conflict or report no effect size.
+  This is the same intuition the withdrawn A3 taxonomy reached for, but now it is measured on a
+  well-posed property instead of inferred from a judge's free text, and the verdicts name both
+  values so the inference is checkable.
+- **Two latent breakages from the 2026-09-04 restructure surfaced during this work**, both of the
+  same kind, code paths no test exercised: `judge.py` had function-local imports of `llm_client`
+  that the module-level rewrite missed (fixed, plus `eval/tests/test_judge.py` which constructs the
+  real judge with a dummy key), and the 585 MB BM25 pickle was unloadable because a pickle records
+  the module path of every class in it (rebuilt; `BM25Index.load` now catches
+  `ModuleNotFoundError` and says "rebuild" instead of failing cryptically). Worth naming the
+  pattern: a rename verified by 19 passing tests still broke two things, because both lived on
+  paths only a live API run or a stale artifact would touch.
+- **Did the redesign do what it was for?** Yes, and more than expected. It was justified as fixing
+  an unmeasurable property. It also reversed one published finding and uncovered a second that the
+  old property had concealed. The cost was a prompt change, a gold migration and one re-run.
+
+---
+
+## Experiment: is the direction jump the scorer or the prompt?
+
+- **Date / module:** M1 (2026-09-05). **Prediction logged before running, which is what I failed to
+  do on the previous re-run** and is why that result had to be re-attributed.
+- **The question.** Direction went from 3/8 to 8/8 on oracle spans between the 09-04 and 09-05
+  runs, and **two variables changed together**: the scorer (free-text LLM judge to deterministic
+  vocabulary match) and the prompt (v2 constrains the model to emit one of four values, a
+  materially easier task than free text). The published claim attributed the jump to the scorer
+  redesign. That attribution is not supported by a run that changed both.
+- **Method.** Grade the **same v2 answers** two ways: with the new deterministic scorer (already
+  done, 8/8) and with the **old LLM judge's `grade_direction`**, which is still in `judge.py`. Same
+  answers, same gold, two graders, so the only variable is the grader. The reverse isolation is not
+  available: v1 answers carry free-text directions like "worse prognosis" that are off-vocabulary
+  by construction, so scoring them with the new scorer would return 0/8 for a trivial reason.
+- **Prediction:** the old judge will also score the v2 answers **high, roughly 7-8 of 8**. Reasoning:
+  under v2 both gold and answer are single clean vocabulary words, so "does `increased` match
+  `increased`" is an easy call for any grader. If that holds, **the prompt change explains most of
+  the jump and the scorer redesign explains little of it**, and the claim that the old finding was
+  a measurement artifact is wrong. I expect to be correcting myself again.
+- **Minimum detectable effect:** n=8. This is not a significance test and is not meant to be. It is
+  a two-way split of a known quantity: if the old judge returns 7-8, the prompt did the work; if it
+  returns 3-4, the scorer did. Only a result in the middle would be uninformative.
+- **Result:** the old judge, grading the **same v2 answers** the new scorer gave 8/8:
+
+  | baseline | old judge on v2 answers | new scorer on v2 answers | old judge on v1 answers (09-04) |
+  |---|---|---|---|
+  | oracle_spans | **3/8** (5 partial, **0 fail**) | 8/8 | 3/8 |
+  | bm25_only | 2/8 (3 partial, 3 fail) | 5/8 | 3/8 |
+  | no_retrieval | 2/8 (3 partial, 3 fail) | 5/8 | 2/8 |
+
+- **Did the prediction hold? No, and the result is cleaner than the prediction.** I predicted the
+  old judge would score the v2 answers 7-8 of 8, which would have meant the prompt did the work.
+  It scored **3 of 8**, the same as it scored the v1 answers. So the near-complete 2x2 reads:
+  **under the old grader the prompt version makes no difference (3/8 either way); under the new
+  grader the same answers score 8/8.** The grader is the entire cause. The prompt contributed
+  nothing measurable to the direction score.
+- **Why, and it confirms the redesign's rationale exactly.** Look at the shape of the old judge's
+  oracle verdicts: 3 pass, 5 partial, **zero fail**. The old judge never once disagreed about the
+  direction. It downgraded five answers to `partial` on **strength**, because it graded direction
+  and strength as a single conflated verdict and `partial` collapses to not-pass in the rate. The
+  redesign's central claim was that conflation was hiding the truth. This is that claim measured:
+  8/8 correct directions were being reported as 3/8 because strength was wrong.
+- **This is the third position I have held on the same question, so the sequence is worth stating
+  plainly.** (1) Claimed the scorer redesign caused the jump, with no evidence separating scorer
+  from prompt. (2) Caught the confound and withdrew the attribution, correctly, since a run that
+  changes two variables cannot support it. (3) Ran the isolation, which supplies the missing
+  evidence and restores the original claim. The first version was unsupported when it was made
+  even though it turned out right, and that is the part worth remembering: it was luck, not method.
+- **What changed because of this:** `RESULTS.md`'s confound caveat is updated from "cannot be
+  attributed" to "attributed, by this experiment." The `no_retrieval` decomposition quoted there
+  (0.250 to 0.625 being "prompt plus scorer") is corrected to scorer alone.
+
+---
+
+## Experiment: does an independent judge agree on groundedness?
+
+- **Date / module:** M1 (2026-09-05). Prediction logged before running.
+- **The question.** After the direction/strength redesign removed the judge from two properties,
+  **groundedness and disagreement are still graded by `openai/gpt-oss-120b`, the same model that
+  generated the answers.** Self-grading carries a known self-preference bias, and groundedness is
+  a headline number (0.000 / 0.700 / 1.000 across the three baselines). It has never been checked
+  against an independent grader.
+- **Method.** Re-grade groundedness on the same `oracle_spans` and `bm25_only` answers with a
+  different model as judge, `qwen/qwen3.8-27b` on the same free tier, changing nothing else.
+  Groundedness is the right property for this: it is a narrow, checkable question (does this cited
+  span support this claim) rather than a matter of taste, so a second model disagreeing means
+  something concrete.
+- **Prediction:** high agreement, within 1 claim-level disagreement per case on average, and
+  **oracle_spans stays at or very near 1.000**. Reasoning: under oracle spans the cited span *is*
+  the gold span by construction, so a grader has to work hard to call it unsupported. I expect any
+  self-preference effect to show up on `bm25_only` instead, where citations are BM25 hits and the
+  call is genuinely harder. If the independent judge scores bm25_only materially lower than 0.700,
+  that is evidence of self-preference and the groundedness numbers need re-basing.
+- **Minimum detectable effect:** n=8 for oracle, n=10 for bm25_only, so only a large shift is
+  visible. A 1-2 case difference is inside the noise and will be reported as inconclusive. What
+  this run can detect is a systematic gap, the kind that would show up as 3+ cases moving one way.
+- **Result:**
+
+  | judge | oracle_spans | bm25_only |
+  |---|---|---|
+  | `openai/gpt-oss-120b` (self) | 8/8 | 7/10 |
+  | `qwen/qwen3.8-27b` (independent) | **8/8** | **8/10** |
+
+  The self-judge run reproduced the recorded numbers exactly, which is a useful check that this
+  harness matches `score.py` rather than approximating it.
+- **Did the prediction hold? Yes, and in the direction that matters.** Oracle stayed at 1.000 under
+  an independent grader, as predicted. On `bm25_only` the independent judge scored **higher**
+  (8/10 vs 7/10), not lower. **There is no evidence of self-preference inflation here**; if
+  anything the self-judge is the stricter of the two. The single case of disagreement is one case
+  at n=10, comfortably inside the noise this run was declared unable to resolve.
+- **What this does and does not license.** It removes the most worrying reading of the groundedness
+  numbers, that they were inflated by a model marking its own homework. It does **not** show the
+  two judges agree in general: they disagree on which cases fail (`qwen` fails
+  `brca_prs_ovarian_risk_ord_001` outright at 0/3 claims grounded, where the self-judge passed it),
+  so the marginal rates agreeing conceals per-case disagreement. Marginal agreement with per-case
+  disagreement is exactly the pattern raw percent agreement flatters and kappa exposes, which
+  `PROJECT_PLAN.md` M1 already warns about. A proper claim-level kappa between the two judges is
+  the follow-up, and has not been run.
+- **What changed because of this:** the "judge grades its own output" red flag is downgraded from
+  open to *checked once on groundedness, no inflation found, per-case agreement still unmeasured*.
+  Disagreement (n=3) remains judge-graded and unchecked.
+
+---
+
+## Experiment: human review of the strength labels, and the finding it overturned
+
+- **Date / module:** M1 (2026-09-05). The review offered at the end of the redesign, run by the user.
+- **Method:** `make_case_worksheet.py --focus strength` over all 11 evidence cases, each showing the
+  scale, the assigned value, the reasoning behind it and the full source text. Filled in by the
+  user.
+- **Result: 6 of 11 valid, 5 wrong. 45%, 95% CI [21%, 72%].** Almost exactly the 50% defect rate the
+  phase A1 pass found in the agent-built gold set, in labels I had assigned two days after writing
+  up why agent-assigned labels could not be trusted.
+- **Two of the five are unambiguous errors of mine, and they have different shapes:**
+  - `tp53_her2_breast_ord_001`: I assigned `high` off "67-83% in carriers vs 16-25% in noncarriers"
+    by reading the raw percentages as large. **The ratio is ~3-4, which is `moderate`.** I did not
+    do the arithmetic.
+  - `brca2_pancreatic_risk_ord_001`: I assigned `low` from the source's own phrase "background
+    association". **A prevalence (4-7% of patients carry a mutation) is not a comparative effect
+    size**; the correct value is `unstated`. I used provenance as a magnitude.
+  - `atm_variants_controversy_disagree_001` and `chek2_breast_popul_specific_disagree_001`: I
+    assigned `disputed` to both. Neither source reports an effect size, so **the sources cannot
+    conflict on magnitude**; the correct value is `unstated`. I conflated direction-level
+    disagreement (already carried by `direction: mixed` and the disagreement property) with
+    magnitude-level disagreement, which is what `disputed` means.
+- **The fifth is a rubric gap, not a labelling error**, and is deliberately left unfixed:
+  `chek2_prostate_risk_ord_001`'s source frames CHEK2 as a "low-penetrance predisposition allele"
+  while reporting variant-level ORs of 8.24 and 2.12. Qualitative framing says `low`, the largest
+  reported effect says `high`, and the query is gene-level while the numbers are variant-level.
+  The rubric has no tie-break rule for that and needs one, since it will recur.
+- **THE FINDING CHANGED.** Two of the four corrections fall in the dev split, and re-scoring gives:
+
+  | baseline | strength before | strength after |
+  |---|---|---|
+  | no_retrieval | 0.250 | 0.250 |
+  | bm25_only | 0.375 | **0.250** |
+  | oracle_spans | 0.375 | **0.500** |
+
+  The published claim was "strength is 0.375 for BM25 **and** 0.375 for oracle spans, identical;
+  perfect retrieval does not move it." **That is now false.** With corrected labels oracle beats
+  BM25 on strength 4/8 to 2/8, +25pp, 3 discordant one way and 1 the other, McNemar p=0.625.
+  Perfect retrieval helps strength too; strength is simply the weakest property, not an untouched
+  one. Direction is unchanged at 62.5 / 62.5 / 100.
+- **What this demonstrates, and it is the most useful thing in this entry:** two corrected labels
+  out of eight flipped a headline conclusion. At n=8 a single case is 12.5 points, so the finding
+  was never robust to label noise, and the label noise was 45%. The MDE discipline catches
+  *sampling* error; it says nothing about *label* error, and this project has now been bitten by
+  label error three times (phase A1 gold, the withdrawn A3 taxonomy, and these strength values).
+  **Label validation is not a one-off phase-A chore; it is a precondition for any claim.**
+- **A tooling bug worth its own line.** `summarize` matched only a bare verdict word, so five
+  verdicts written as "wrong (should be unstated)" were discarded as unparseable, reported as
+  UNFILLED, and the tool printed **"valid 6 (100%)"** over a real 45% error rate. A review tool
+  that turns corrections into a clean sheet is worse than no review tool. Fixed, with the
+  qualifier kept as the reason, and regression-tested including the "wrongly" false-positive case.
+  Also fixed a hardcoded "at n=8" in the closing note that was wrong for an 11-case worksheet, and
+  `compare_runs.py`, which still had a property list predating `strength` and was silently omitting
+  it from every paired comparison.
+
+---
+
+## Design decision: strength is matched to the granularity of the query
+
+- **Date / module:** M1 (2026-09-05). Confirmed with the user; closes the rubric gap the strength
+  review exposed.
+- **The problem.** `chek2_prostate_risk_ord_001` asks a **gene-level** question (its `variant` is
+  null) against a source that calls CHEK2 a "low-penetrance predisposition allele" while reporting
+  **variant-level** ORs of 8.24 (c.1100delC) and 2.12 (I157T). The author's framing says `low`, the
+  largest number says `high`, and the rubric had no rule to choose.
+- **Decision:** **strength is read at the granularity the query asks about.** A gene-level query
+  takes the source's gene-level claim; a variant-level query takes that variant's reported effect.
+  Numbers at a different granularity go in `strength_detail`, where they are preserved and unscored.
+  So this case becomes `low`.
+- **Alternatives considered:**
+  - *Largest reported effect size wins.* Maximally objective and never depends on how an author
+    characterises their own result. Rejected because it answers a gene-level question with one
+    variant's number, and would mark a system **correct** for calling CHEK2 high-risk when the
+    source it is citing says the opposite. Groundedness would pass while the answer misrepresents
+    the source, which is the failure this whole property exists to catch.
+  - *Retire or narrow the case.* Honest, and genuinely tempting given the set is already small.
+    Rejected because the underlying question recurs: gene-level queries against papers reporting
+    variant-level effects are the normal shape of this literature, not an anomaly, so the rubric
+    needs the rule regardless of what happens to this one case.
+- **The cost, stated because it is real:** this lets an author's qualitative framing outrank a
+  number they themselves reported, and the rubric otherwise prefers measurements to prose. The
+  defence is that "low-penetrance" *is* the source's finding about the gene, not editorial colour,
+  and the query asked about the gene.
+- **Reversibility:** cheap. One label, and `strength_detail` retains both ORs, so re-deciding costs
+  a re-score rather than a re-read of the source.
+
+---
+
+## Design decision: over-engineering audit, and the one finding that was a schema risk
+
+**Date:** 2026-09-05. **Logged after the fact**, which breaks the standing rule. The deliberation
+was a repo-wide audit whose ranked findings were reviewed and approved before any edit landed, so
+the reasoning did precede the code, but it lived in a chat transcript rather than here. Written up
+now so it is in the record.
+
+- **What prompted it:** a check that the repo is still cheap to build on before phase B adds the
+  instrumentation spine and phase D adds a pipeline. Seven findings, ranked by size.
+- **The one that mattered, and it was not the biggest.** Three files counted source-span character
+  offsets independently: `common/corpus_text.py`, `service/search.py._find_span_in_xml`, and
+  `eval/find_coverage.py._extract_paragraphs`. Standing rule 5 says labels attach to
+  `(pmcid, section_id, char_start, char_end)` and cannot be retrofitted, which only holds if every
+  producer and consumer counts offsets the same way. They agreed by prose assertion in four
+  docstrings, and they had **already drifted**: `find_coverage` produced no paragraphs at all for
+  an abstract written as bare text with no `<p>` children, where `corpus_text` produced one. Every
+  caller now goes through `corpus_text.iter_paragraphs`, and `common/tests/test_corpus_text.py`
+  asserts the invariant (`extract_section_text(...)[start:end] == the span text`) across all three
+  consumers, including one test that fails if `bm25` and `search.py` ever disagree about the same
+  paragraph. Phase D's JATS chunker would have been a fourth convention.
+- **The prompt duplication was the same class of bug, one level up.** `bm25_only.py` and
+  `oracle_spans.py` each held a byte-identical copy of the answering prompt, with a comment in one
+  of them warning that a difference between the two would confound the comparison the baselines
+  exist to make. A warning is not a mechanism. Both now import `EXCERPT_PROMPT` from
+  `eval/baselines/_runner.py`, along with `git_sha`, case loading, citation mapping and run-metadata
+  writing. Verified byte-for-byte identical to the old copies before the swap, so every
+  `RESULTS.md` row stands.
+- **Deleted as speculative:** `make_kappa_worksheet.py` and `run_kappa_calibration.py` (human kappa
+  is deliberately skipped for M1, two of the four properties they calibrate are now graded in code,
+  and `make_case_worksheet.py` already parses both worksheet shapes); `Judge.grade_direction` and
+  its prompt, dead since the direction redesign; the `methods_extraction` scoring paths, 0 cases of
+  17 and deferred out of M1. `kappa.py` itself is kept, it is 34 lines of real statistic.
+- **Deduplicated:** `wilson_ci` (2 copies) and `bootstrap_ci` (2 copies, differing only in which
+  statistic they resampled) into `common/stats.py`. Both verified to reproduce their old outputs
+  exactly, so no logged number moves.
+- **14 hand-rolled `check(name, cond)` harnesses** replaced with `unittest`, and `run_tests.py`
+  deleted: `python -m unittest discover` now finds all 22 modules and 203 tests. The conversion
+  also surfaced a test that had gone dead, `run_sampling_test` in `ingestion/test_pull_corpus.py`
+  (the seeded-uniform-draw check), which was never called by the module's own runner.
+- **Net:** ~920 lines removed, no dependency changes. The dependency count was already lean.
+- **Cost, stated because it is real:** a reader who wants to know how a baseline works now opens two
+  files rather than one. That is the trade for the prompt being impossible to fork by accident.
+- **Reversibility:** everything deleted is in git history and named above.
+
+### The mistake this session made, recorded because the recovery is the useful part
+
+`git checkout eval/score.py` was run to revert a deliberate one-line mutation used to test whether
+the converted assertions still fire. It reverted the whole file to `HEAD`, discarding the
+uncommitted direction/strength redesign along with it. There was no stash and no editor history.
+
+It was reconstructed and then **verified against artifacts the lost version had produced**:
+`eval/runs/{no_retrieval,bm25_only,oracle_spans}_answers.jsonl` were re-scored through the rebuilt
+`score_direction`, `score_strength` and `score_not_found`, and every verdict and rationale string
+matched the stored `*_scores.json` exactly, as did the recomputed `summary` block for all three
+runs. The one part with no artifact to check against is the majority-class baseline line
+`main()` prints; the wording there is a reconstruction, not a recovery.
+
+Two lessons worth keeping: uncommitted work is the only work git cannot give back, and a mutation
+test needs its revert planned before the mutation, not improvised after it.

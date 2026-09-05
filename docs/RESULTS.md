@@ -243,6 +243,210 @@ to be unsound, so it was not safe to keep, but the replacement genuinely tests l
 now measures retrieval restraint, not memorization. Recovering the memorization test needs a
 different construction, and that is an open item rather than a solved one.
 
+### Independent-judge check on groundedness, 2026-09-05
+
+Groundedness and disagreement are still graded by `openai/gpt-oss-120b`, **the same model that
+generates the answers**. Re-graded the same answers with `qwen/qwen3.8-27b`, changing nothing else.
+
+| Judge | oracle_spans | bm25_only |
+|---|---|---|
+| `openai/gpt-oss-120b` (self) | 8/8 | 7/10 |
+| `qwen/qwen3.8-27b` (independent) | 8/8 | **8/10** |
+
+**No evidence of self-preference inflation.** The independent judge scored `bm25_only` *higher*,
+not lower, so the self-judge is if anything the stricter of the two, and the groundedness numbers
+in this file do not appear to be flattered by self-grading.
+
+**But marginal agreement is hiding per-case disagreement.** The two judges differ on *which* cases
+fail: `qwen` fails `brca_prs_ovarian_risk_ord_001` outright (0 of 3 claims grounded) where the
+self-judge passed it. Two judges landing on nearly the same rate while disagreeing about the cases
+is precisely the pattern raw percent agreement flatters and kappa exposes. A claim-level kappa
+between the two judges is the outstanding follow-up and has not been run, so read this as "the
+worst reading is ruled out", not "the judges agree".
+
+### Redesigned direction/strength properties, 2026-09-05: the failure moves to strength
+
+All three baselines re-run under the controlled vocabulary (`eval/labels.py`), with `direction` and
+`strength` **split into separate properties and graded deterministically in code, no judge**. The
+judge now grades only groundedness and disagreement. Prompt version v2 in all three baselines, so
+these are not comparable to the 09-04 rows above; **they supersede them.**
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_direction` | 0.625 | [0.31, 0.86] | 8 | `cfg-d71b7cfa6e81` | `4ffbfd9` | **below the 75% majority-class baseline** |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_strength` | 0.250 | [0.07, 0.59] | 8 | `cfg-d71b7cfa6e81` | `4ffbfd9` | new property, split out of direction |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_groundedness` | 0.0 | [0.00, 0.32] | 8 | `cfg-d71b7cfa6e81` | `4ffbfd9` | fails by construction |
+| 2026-09-05 | M1 | answer | `baseline/no_retrieval_not_found` | 0.750 | [0.47, 0.91] | 12 | `cfg-d71b7cfa6e81` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_direction` | 0.625 | [0.31, 0.86] | 8 | `cfg-2f081d65e1b6` | `4ffbfd9` | **also below the 75% majority-class baseline**; identical to no-retrieval |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_strength` | 0.375 | [0.14, 0.69] | 8 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_groundedness` | 0.700 | [0.40, 0.89] | 10 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_disagreement` | 0.667 | [0.21, 0.94] | 3 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/bm25_only_not_found` | 0.917 | [0.65, 0.99] | 12 | `cfg-2f081d65e1b6` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_direction` | **1.000** | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | paired vs bm25 **+38pp**, 3 discordant all one way, McNemar p=0.250 |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_strength` | 0.375 | [0.14, 0.69] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | **identical to BM25. Perfect retrieval does not move this one** |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_groundedness` | 1.000 | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_disagreement` | 0.333 | [0.06, 0.79] | 3 | `cfg-a15e09ce1833` | `4ffbfd9` | lower than BM25's 0.667; n=3 |
+| 2026-09-05 | M1 | answer | `baseline/oracle_spans_not_found` | 1.000 | [0.68, 1.00] | 8 | `cfg-a15e09ce1833` | `4ffbfd9` | |
+
+**The 2026-09-04 finding does not survive, but the cross-run comparison is CONFOUNDED and the
+first version of this paragraph over-attributed it.** Oracle spans scored 3/8 on direction under
+the old setup and 8/8 under the new one. Two things changed at once: the scorer (free-text judge to
+deterministic vocabulary match) **and the prompt** (v2 constrains the model to emit one of four
+values, which is a materially easier task than free-text). The jump cannot be attributed to the
+property redesign alone, and the original wording here claimed it could.
+
+**The confound has since been resolved by experiment** (`DECISION_LOG.md`, "is the direction jump
+the scorer or the prompt?"). Grading the **same v2 answers** with the old LLM judge gives **3/8**
+for oracle spans, the same as it gave the v1 answers, while the new scorer gives 8/8. So under the
+old grader the prompt version makes no difference, and under the new grader the same answers score
+8/8: **the grader is the entire cause and the prompt contributed nothing measurable.**
+
+**The mechanism, visible in the old judge's verdicts:** 3 pass, 5 partial, **zero fail**. It never
+disagreed about direction once. It downgraded five answers on *strength*, because it graded the two
+as one conflated verdict and `partial` collapses to not-pass. Eight correct directions were being
+reported as three. That is precisely the defect the property redesign was built to remove, measured
+directly.
+
+**What is clean either way:** comparisons *within* the 2026-09-05 run, where all three baselines
+share prompt v2 and the same scorer. Oracle 1.000 against BM25 0.625 is a like-for-like +38pp, 3
+discordant pairs all one way, McNemar p=0.250.
+
+**Read direction against the majority-class baseline, not against zero.** Six of the eight scored
+cases are gold `increased`, so "always answer increased" scores **75%**. No-retrieval and BM25 both
+score **62.5%, worse than that trivial baseline.** Only the oracle run beats it. `score.py` prints
+this baseline under every direction line so the number cannot be quoted without it.
+
+**SUPERSEDED 2026-09-05 by the human strength review.** This section originally read: "Strength
+sits at 0.375 for BM25 and 0.375 for oracle spans: identical ... perfect retrieval moves strength
+not at all. This is the reading failure the project has been chasing." A human review of the 11
+strength labels found **5 of them wrong (45%)**, two of those in the dev split, and re-scoring
+against the corrected labels gives:
+
+| baseline | strength, my labels | strength, reviewed labels |
+|---|---|---|
+| no_retrieval | 0.250 | 0.250 |
+| bm25_only | 0.375 | **0.250** |
+| oracle_spans | 0.375 | **0.500** |
+
+**Perfect retrieval does help strength**, 4/8 against BM25's 2/8, +25pp, McNemar p=0.625 at n=8.
+Strength is the weakest property, not an untouched one. Direction is unchanged (62.5 / 62.5 /
+100.0). Two corrected labels out of eight flipped the conclusion, which is what a 12.5-points-per-
+case eval set does when its labels carry a 45% error rate. See `DECISION_LOG.md`, "human review of
+the strength labels.
+
+**What the strength failures are.** Also withdrawn: the original list here was computed against
+the labels the review found 45% wrong, and two of the three examples it cited (`high` against gold
+`disputed`) rested on `disputed` values that were themselves incorrect. Under the corrected labels
+oracle spans scores 4 pass, 1 partial, 3 fail on strength. A characterisation of the remaining
+three failures is **not** offered here: at n=8 with the labels only just corrected, the honest
+position is that strength is the weakest property and the reason is not yet established.
+
+**Caveats.** n=8 for direction and strength, n=3 for disagreement, so nothing here is significant;
+the direction delta's p=0.250 is the best available and comes from 3 discordant pairs. Gold
+`strength` values are my assignments from the source text and are reviewable, not authoritative.
+And direction now carries a 75% floor, which is a property of an eval set that is 6/8 one class.
+
+### Date stratification (A4), 2026-09-04: the per-stratum rule is not computable yet
+
+This file's own metric-family note says `baseline/no_retrieval` must **always** be reported per
+date-stratum, because the pooled number conflates retrieval lift with memorization. No row above
+obeys it. Phase A4 built the stratification (`eval/strata.py`, `earliest_evidence_year` now stored
+on every case) and ran it. The result is that the rule cannot be honoured on this eval set:
+
+| Stratum (dev, non-negative, cutoff 2024) | n |
+|---|---|
+| pre_cutoff | 7 |
+| **post_cutoff** | **1** |
+
+A pass rate over one case is an anecdote, so no `_pre_cutoff` / `_post_cutoff` rows are being
+added. The tooling refuses to print one below n=5, where the Wilson interval spans more than half
+of [0,1].
+
+**This is a statement about the eval set, not the corpus.** 1,569 corpus articles (about 20% of the
+snapshot) are post-2024, so the material for a real post-cutoff stratum exists; the gap is labeling
+effort. The memorization question `PROJECT_PLAN.md`'s statistical rule 4 exists to answer therefore
+**remains unanswered**, and every no-retrieval number above should be read knowing that some of its
+apparent competence may be memorization that this project has not yet been able to measure.
+
+The cutoff year is an assumption, not a fact: `gpt-oss-120b`'s training cutoff is not published
+anywhere citable here, so `strata.py` takes it as a parameter (default 2024) and prints the full
+per-case year distribution. The 7/1 split is unchanged at a 2023 or 2025 cutoff. Details and the
+rejected alternatives, including the tempting one of moving the cutoff until the strata balance,
+are in `docs/DECISION_LOG.md`, "date stratification built."
+
+### Oracle-span baseline (A3), 2026-09-04: perfect retrieval does not fix direction
+
+Phase A3's substitute for the plan's whole-document-in-context baseline, which is blocked on the
+free tier (a hard 8,000 TPM per-request ceiling against 3k-20k-token gold articles; probe returned
+HTTP 413). This baseline supplies exactly the case's **gold spans** as context, so retrieval is
+perfect by construction. Same model, prompt shape and citation mechanism as BM25-only, so the only
+variable is which passages reached the model. Negative cases have no gold spans and are excluded,
+so this scores the 8 non-negative dev cases. Method, prediction and the blocker measurement are in
+`docs/DECISION_LOG.md`, "oracle-span baseline (A3)".
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_groundedness` | 1.000 | [0.68, 1.00] | 8 | `cfg-be9db797fd63` | `4ffbfd9` | paired vs bm25_only +25pp, 2 discordant, p=0.500 |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_not_found` | 1.000 | [0.68, 1.00] | 8 | `cfg-be9db797fd63` | `4ffbfd9` | extended check; BM25's one wrong refusal (a retrieval miss) disappears, as predicted |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_direction` | 0.375 | [0.14, 0.69] | 8 | `cfg-be9db797fd63` | `4ffbfd9` | **identical to bm25_only's 0.375. +0pp, though 4 of 8 cases flipped verdict, p=1.000** |
+| 2026-09-04 | M1/A3 | answer | `baseline/oracle_spans_disagreement` | 0.333 | [0.06, 0.79] | 3 | `cfg-be9db797fd63` | `4ffbfd9` | *lower* than bm25_only's 0.667; n=3, unreadable alone, but see the note below |
+
+**What this settles, narrowed after the 2026-09-05 correction below.** The flat-direction result
+has been the project's central puzzle since 2026-09-02, and it was always ambiguous: BM25 might
+simply not have retrieved the right passage. This run removes *that* explanation by construction.
+Handed the exact gold span, the system cites it correctly **100%** of the time and never wrongly
+refuses, and still scores 3/8 on direction. So retrieval is not what limits the direction score.
+
+That is the whole of what it settles. The original version of this section went further and
+concluded "whatever is wrong with direction is downstream of retrieval, in reading." **That does
+not follow**, because a third possibility was never excluded and turns out to dominate: the
+direction property itself is badly specified, and much of the 3/8 is the scorer, not the system.
+See the correction below.
+
+**CORRECTION (2026-09-05): the failure taxonomy first published here was withdrawn.** The original
+text claimed the five non-passing direction verdicts fell into two buckets, "strength
+overstatement (3 of 8)" and "disagreement collapse (2 of 8)", and that neither was a retrieval
+problem. That was derived from the judge's free-text rationales **without reading the system
+answers underneath**. Reading them dissolves both buckets substantially. What follows replaces it.
+
+**Most of the five "failures" are scoring artifacts, not reading failures.**
+
+- `atm_variants_controversy_disagree_001`, graded `fail` for contradicting gold's "mixed_evidence":
+  its `answer_text` reads "the evidence is **mixed and considered controversial**, with the overall
+  role of ATM as a breast cancer gene described as uncertain." The model reported the disagreement.
+  It just put it in `answer_text` and `strength` rather than the `direction` field.
+- **The mechanism is in the scorer, and it is structural.** `score_direction` passes the judge only
+  `gold.direction`, `gold.strength`, `answer.direction` and `answer.strength`. **It never passes
+  `answer_text`.** The judge cannot see nuance stated in the answer, so a system that hedges
+  correctly in prose is scored as if it had not.
+- `brca2_pancreatic_risk_ord_001`: gold direction "increased risk", system "increased risk", an
+  exact match, graded `partial` because gold strength reads "background association; approximately
+  4-7%..." and the system said "moderate evidence (4-7% prevalence)". It cites the same figure.
+- `atm_at_lymphoid_tumor_ord_001`: gold `strength` is "cohort of 296 genetically confirmed A-T
+  patients ... 66 developed a malignant tumour", which is a **cohort description, not a strength**.
+  The system said "substantial protective effect observed", the source's own phrase, and was marked
+  down for not reciting cohort sizes.
+
+**The root cause is that the gold label vocabulary is uncontrolled free text.** Eleven evidence
+cases carry **nine distinct `direction` strings**: `'mixed'` and `'mixed_evidence'` are the same
+concept written two ways, `'high_risk_vs_moderate'` is snake_case among prose, and several fold
+strength into direction. `strength` mixes effect sizes, cohort descriptions and provenance with no
+scale. This also explains the direction kappa of 0.216 recorded earlier, which had been attributed
+to the judge: the label space itself is ill-defined, so the property is close to unmeasurable as
+currently specified.
+
+**What survives, and what does not.** The raw number stands: handed the exact gold span, the system
+scores 100% on grounding and refusal and 3/8 on direction. What does **not** stand is the
+explanation. The direction failures cannot currently be attributed to reading, because the property
+that measures them is not well posed. Any claim about *why* direction fails is on hold until the
+property is redesigned. See `docs/DECISION_LOG.md`, "direction property redesign."
+
+**Caveat, stated because the number invites over-reading.** n=8, and four of the eight direction
+verdicts flipped (two each way), so the identical 0.375 is churn rather than stability, and the
+rate itself is noise. The pre-registered MDE said this run could not be a significance test and it
+was not one. What it provides is the per-case *composition* of failures, which is the raw material
+M4 needs and does not depend on the rate being precise.
+
 **On the stub handler:** these are Step 0c's required first `RESULTS.md` row (`PROJECT_PLAN.md`
 0c exit criterion), not a system-quality baseline. The handler is deliberately trivial (literal
 keyword match, no retriever); see `docs/DECISION_LOG.md`, "Step 0c built as a stub handler, v1
