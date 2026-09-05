@@ -1,9 +1,18 @@
 """
 The M1 answer-set scorer. Implements the rubric logged in
 docs/DECISION_LOG.md, "Answer-set scoring rubric" (confirmed 2026-09-01):
-four pass/partial/fail sub-scores per evidence case (direction/strength,
-citation/groundedness, surfaces disagreement, says not-found), two for the
-methods_extraction stratum (parameter accuracy, citation).
+four pass/partial/fail sub-scores per evidence case (direction, strength,
+citation/groundedness, surfaces disagreement, says not-found).
+
+Direction and strength are scored separately, and in code, not by a judge:
+see eval/labels.py and docs/DECISION_LOG.md, "direction property redesign".
+
+The rubric also names a `methods_extraction` stratum (parameter accuracy,
+citation). It was scored here until 2026-09-05 and is gone: the v4 audit
+deferred those cases out of M1, the answer set holds 17 evidence cases and
+zero methods cases, and a branch no case can reach reads as live support for
+a stratum that does not exist. Recover it from git history when the cases
+are actually built.
 
 Two things here are this script's own implementation choices, not settled
 in that rubric discussion, flagged so they're easy to revisit:
@@ -30,14 +39,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
 from common.corpus_text import load_span_text
+from common.stats import wilson_ci
 from eval.judge import Judge, JudgeResult, make_judge
+from eval.labels import grade_direction, grade_strength, majority_class_baseline
 from eval.split import load_split, record_touch, MAX_RECOMMENDED_TOUCHES
 
 CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
@@ -67,9 +77,6 @@ class SystemAnswer:
     not_found: bool = False
     answer_text: str = ""
     claims: list[Claim] = field(default_factory=list)
-    # methods_extraction stratum only
-    parameter_value: Optional[str] = None
-    cited_pmcid: Optional[str] = None
 
     @staticmethod
     def from_dict(d: dict) -> "SystemAnswer":
@@ -77,7 +84,7 @@ class SystemAnswer:
         return SystemAnswer(
             case_id=d["case_id"], direction=d.get("direction"), strength=d.get("strength"),
             not_found=d.get("not_found", False), answer_text=d.get("answer_text", ""),
-            claims=claims, parameter_value=d.get("parameter_value"), cited_pmcid=d.get("cited_pmcid"),
+            claims=claims,
         )
 
 
@@ -93,11 +100,10 @@ class CaseScore:
     case_id: str
     stratum: str
     direction: Optional[PropertyScore] = None
+    strength: Optional[PropertyScore] = None
     groundedness: Optional[PropertyScore] = None
     disagreement: Optional[PropertyScore] = None
     not_found: Optional[PropertyScore] = None
-    parameter_accuracy: Optional[PropertyScore] = None
-    citation: Optional[PropertyScore] = None
 
 
 def _refuses(text: str) -> bool:
@@ -133,13 +139,25 @@ def score_groundedness(answer: SystemAnswer, judge: Judge, xml_dir: Path) -> Pro
     return PropertyScore(verdict, rationale)
 
 
-def score_direction(case: dict, answer: SystemAnswer, judge: Judge) -> PropertyScore:
-    gold = case["gold"]
-    result = judge.grade_direction(
-        case["query"], gold["direction"], gold.get("strength"),
-        answer.direction or "", answer.strength or "",
-    )
-    return PropertyScore(result.verdict, result.rationale)
+def score_direction(case: dict, answer: SystemAnswer) -> PropertyScore:
+    """Graded against a controlled vocabulary in code, with no LLM in the
+    loop, and reported against the majority-class baseline, never against
+    zero. Note this takes no judge. See eval/labels.py and
+    docs/DECISION_LOG.md, "direction property redesign", for why this
+    stopped being an LLM call: the same model was grading its own output on
+    the property with the worst measured agreement, and the free-text gold
+    made that agreement unmeasurable anyway."""
+    verdict, rationale = grade_direction(case["gold"].get("direction"), answer.direction)
+    return PropertyScore(verdict, rationale)
+
+
+def score_strength(case: dict, answer: SystemAnswer) -> PropertyScore:
+    """Scored separately from direction, where the two used to be conflated
+    into one verdict. A right-direction/wrong-strength answer was
+    indistinguishable from a wrong-direction one in the pass rate, since
+    `partial` collapses to not-pass."""
+    verdict, rationale = grade_strength(case["gold"].get("strength"), answer.strength)
+    return PropertyScore(verdict, rationale)
 
 
 def score_disagreement(case: dict, answer: SystemAnswer, judge: Judge) -> PropertyScore:
@@ -164,31 +182,10 @@ def score_not_found(case: dict, answer: SystemAnswer) -> PropertyScore:
     )
 
 
-def score_methods_case(case: dict, answer: SystemAnswer) -> tuple[PropertyScore, PropertyScore]:
-    gold = case["gold"]
-    expected = (gold.get("expected_value") or "").strip().lower()
-    got = (answer.parameter_value or "").strip().lower()
-    param_verdict = "pass" if expected and expected == got else "fail"
-    parameter_accuracy = PropertyScore(
-        param_verdict, f"expected {gold.get('expected_value')!r}, got {answer.parameter_value!r}",
-    )
-    expected_pmcids = gold.get("expected_pmcids") or ([gold["expected_pmcid"]] if gold.get("expected_pmcid") else [])
-    cite_verdict = "pass" if answer.cited_pmcid in expected_pmcids else "fail"
-    citation = PropertyScore(
-        cite_verdict, f"expected one of {expected_pmcids}, got {answer.cited_pmcid!r}",
-    )
-    return parameter_accuracy, citation
-
-
 def score_case(case: dict, answer: SystemAnswer, judge: Judge, xml_dir: Path = XML_DIR) -> CaseScore:
     stratum = case["stratum"]
     result = CaseScore(case_id=case["case_id"], stratum=stratum)
 
-    if stratum == "methods_extraction":
-        result.parameter_accuracy, result.citation = score_methods_case(case, answer)
-        return result
-
-    # evidence stratum
     is_negative = case["is_negative_case"]
     gold = case["gold"]
 
@@ -202,7 +199,8 @@ def score_case(case: dict, answer: SystemAnswer, judge: Judge, xml_dir: Path = X
             result.groundedness = score_groundedness(answer, judge, xml_dir)
         return result
 
-    result.direction = score_direction(case, answer, judge)
+    result.direction = score_direction(case, answer)
+    result.strength = score_strength(case, answer)
     result.groundedness = score_groundedness(answer, judge, xml_dir)
     if gold["has_disagreement"]:
         result.disagreement = score_disagreement(case, answer, judge)
@@ -214,28 +212,12 @@ def load_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def wilson_ci(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """95% Wilson score interval for a binomial proportion. Used instead of
-    the normal approximation because CLAUDE.md's own rule ("every number in
-    RESULTS.md carries ... a 95% CI") gets applied here at n as small as 4,
-    where the normal approximation can produce a nonsense interval (below 0
-    or above 1); Wilson stays valid at small n and exactly at p=0 or p=1."""
-    if n == 0:
-        return (0.0, 0.0)
-    phat = successes / n
-    denom = 1 + z * z / n
-    center = (phat + z * z / (2 * n)) / denom
-    margin = z * math.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n)) / denom
-    return (max(0.0, center - margin), min(1.0, center + margin))
-
-
 def summarize(scores: list[CaseScore]) -> dict:
     """Per-property pass rate, N/A cases excluded from the denominator.
     Deliberately not a single blended score: DECISION_LOG.md's rubric entry
     rejected a holistic pass/fail specifically so a property's failure
     doesn't hide behind the others."""
-    properties = ["direction", "groundedness", "disagreement", "not_found",
-                  "parameter_accuracy", "citation"]
+    properties = ["direction", "strength", "groundedness", "disagreement", "not_found"]
     summary = {}
     for prop in properties:
         verdicts = [getattr(s, prop).verdict for s in scores if getattr(s, prop) is not None]
@@ -310,6 +292,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {prop:20s} n={stats['n']:3d}  pass={stats['pass']:3d}  "
               f"partial={stats['partial']:3d}  fail={stats['fail']:3d}  "
               f"pass_rate={stats['pass_rate']:.0%}  95% CI [{ci[0]:.0%}, {ci[1]:.0%}]")
+
+    # A direction pass rate is meaningless on its own while the gold set is
+    # class-imbalanced, so it never gets printed on its own. See labels.py.
+    scored_ids = {s.case_id for s in scores}
+    value, rate, n_majority = majority_class_baseline(
+        [c["gold"].get("direction") for cid, c in cases.items() if cid in scored_ids])
+    if n_majority:
+        print(f"\n  majority-class baseline for direction: always answer {value!r} "
+              f"scores {rate:.0%} (n={n_majority}). Read the direction row against this, "
+              f"not against zero.")
 
     if args.out:
         payload = {"summary": summary, "cases": [asdict(s) for s in scores]}

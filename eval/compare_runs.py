@@ -24,8 +24,7 @@ import math
 import sys
 from pathlib import Path
 
-PROPERTIES = ["direction", "groundedness", "disagreement", "not_found",
-              "parameter_accuracy", "citation"]
+PROPERTIES = ["direction", "strength", "groundedness", "disagreement", "not_found"]
 
 
 def mcnemar_exact_p(b: int, c: int) -> float:
