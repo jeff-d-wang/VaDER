@@ -3,9 +3,9 @@ Phase A1 of the v4 execution order (see docs/PROJECT_PLAN.md, "Tier 1
 execution order (v4)"): a worksheet for validating the eval CASES
 themselves, by hand, by a person.
 
-This is not make_kappa_worksheet.py and not judge calibration. Kappa asks
-"does the judge grade like a human." This asks the question underneath it:
-"is the gold label right at all." Every case in answer_cases.jsonl was
+This is not judge calibration. Kappa asks "does the judge grade like a
+human." This asks the question underneath it: "is the gold label right at
+all." Every case in answer_cases.jsonl was
 written by an agent (`created_by: agent:*`) and has never been read by a
 person, so both the judge and any human rater have so far been grading
 against ground truth nobody checked.
@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 from common.corpus_text import load_span_text
+from common.stats import wilson_ci
 from eval.split import load_split
 
 CASES_PATH = Path(__file__).parent / "data" / "answer_cases.jsonl"
@@ -49,7 +50,10 @@ XML_DIR = Path(__file__).parent.parent / "corpus" / "xml"
 
 VERDICTS = ("valid", "wrong", "unsure")
 _VERDICT_RE = re.compile(r"^-\s*\*\*verdict:\*\*\s*(.*)$", re.IGNORECASE)
-_CASE_RE = re.compile(r"^##\s+Case\s+\d+:\s+`([^`]+)`")
+# Matches both worksheet headings: "## Case 3: `id`" (case focus) and
+# "## 3. `id`  (dev split)" (strength focus). One parser for both, so a
+# filled-in worksheet of either kind summarizes the same way.
+_CASE_RE = re.compile(r"^##\s+(?:Case\s+)?\d+[.:]\s+`([^`]+)`")
 _WHY_RE = re.compile(r"^-\s*\*\*why:\*\*\s*(.*)$", re.IGNORECASE)
 
 
@@ -175,6 +179,96 @@ def render_case(case: dict, number: int, xml_dir: Path) -> str:
     return "\n".join(lines)
 
 
+def render_strength_case(case: dict, number: int, xml_dir: Path, split: dict) -> str:
+    """One evidence case, focused on whether its `strength` label is right.
+
+    Separate renderer from render_case because the question is different.
+    Case validation asks "is this gold label right at all"; this asks one
+    narrow thing: given the source text, is the assigned point on the
+    strength scale the right one. The scale, the assignment, the reasoning
+    behind it and the evidence are all on screen together, because that is
+    what makes the answer checkable rather than a vibe."""
+    gold = case["gold"]
+    lines = [
+        f"## {number}. `{case['case_id']}`  ({split.get(case['case_id'], '?')} split)",
+        "",
+        f"**Query:** {case['query']}",
+        "",
+        f"**Direction (for context, not what you are checking):** `{gold.get('direction')}`",
+        "",
+        f"**Assigned strength: `{gold.get('strength')}`**",
+        "",
+        f"*Why I assigned it:* {gold.get('qualifier') or '(no qualifier recorded)'}",
+        "",
+        f"*Quantitative detail from the source (`strength_detail`):* "
+        f"{gold.get('strength_detail') or '(none)'}",
+        "",
+        "**The evidence, full text of every gold span:**",
+        "",
+    ]
+    for i, span in enumerate(case["gold_spans"], start=1):
+        text, err = load_span_text(xml_dir, span["pmcid"], span["section"],
+                                   span["char_start"], span["char_end"])
+        head = f"Span {i}: {span['pmcid']} / {span['section']}"
+        if err is not None:
+            lines += [f"- **{head}: COULD NOT RESOLVE ({err})**", ""]
+            continue
+        lines += [f"- **{head}**", "", "  > " + text.replace("\n", "\n  > "), ""]
+    lines += [
+        "**Your verdict.** `valid` = this is the right point on the scale. `wrong` = it should be "
+        "a different value (say which). `unsure` = you cannot tell from the span alone.",
+        "",
+        "- **verdict:** ___",
+        "- **why:** ___",
+        "",
+        "---",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def render_strength_worksheet(cases: list[dict], xml_dir: Path, split: dict) -> str:
+    header = [
+        "# Strength label review",
+        "",
+        f"All {len(cases)} evidence cases. **What you are checking:** whether each case's "
+        "`strength` value is the right point on the scale, given the source text below it.",
+        "",
+        "**Why this matters more than it looks.** These 11 assignments were made by an agent "
+        "reading the sources, not by you and not by a domain expert, and the project's current "
+        "headline finding rests on them: strength is the one property perfect retrieval does not "
+        "fix (0.375 with the exact gold spans, identical to BM25). If these labels are wrong, that "
+        "finding is wrong. It is the same dependency that produced the phase A1 problem, one layer "
+        "up.",
+        "",
+        "**The scale:**",
+        "",
+        "| Value | Means |",
+        "|---|---|",
+        "| `high` | large reported effect (roughly OR/RR > 5, or described as high-risk) |",
+        "| `moderate` | intermediate reported effect (roughly OR/RR 2-5) |",
+        "| `low` | small reported effect (roughly OR/RR < 2, or framed as low-penetrance/background) |",
+        "| `none` | no association reported |",
+        "| `disputed` | sources conflict on the magnitude |",
+        "| `unstated` | the source reports no effect size at all |",
+        "",
+        "`low`/`moderate`/`high` are ordered, so a one-tier miss scores `partial`. `none`, "
+        "`disputed` and `unstated` are categorical: they are either right or wrong.",
+        "",
+        "Fill in the two `___` lines per case, then run:",
+        "",
+        "```",
+        "python -m eval.make_case_worksheet --summarize strength_worksheet.md",
+        "```",
+        "",
+        "---",
+        "",
+    ]
+    body = [render_strength_case(c, i, xml_dir, split)
+            for i, c in enumerate(cases, start=1)]
+    return "\n".join(header) + "".join(body)
+
+
 def render_worksheet(cases: list[dict], xml_dir: Path, seed: int) -> str:
     header = [
         "# Eval case validation worksheet",
@@ -202,6 +296,26 @@ def render_worksheet(cases: list[dict], xml_dir: Path, seed: int) -> str:
     return "\n".join(header) + "".join(body)
 
 
+def _parse_verdict(raw: str) -> str:
+    """Extract the verdict word from a line that may qualify it.
+
+    A rater writing "wrong (should be unstated)" is giving MORE information
+    than a bare "wrong", and the first version of this parser threw those
+    away as unparseable and reported them as UNFILLED. On the first real
+    strength review that turned 5 corrections into a printed "valid 6
+    (100%)", which is the most dangerous kind of bug this file can have: it
+    reported a clean sheet where the truth was a 45% error rate. Match the
+    leading verdict word and keep the qualifier as the reason."""
+    # Emphasis markers can appear mid-string ("**WRONG** (should be low)"),
+    # so strip them everywhere rather than just at the ends.
+    cleaned = raw.replace("*", "").replace("`", "").strip().lower()
+    for verdict in VERDICTS:
+        if cleaned == verdict or cleaned.startswith(verdict + " ") or \
+                cleaned.startswith(verdict + "(") or cleaned.startswith(verdict + ","):
+            return verdict
+    return cleaned
+
+
 def summarize(path: Path) -> int:
     """Parses a filled-in worksheet. Deliberately strict about unfilled
     verdicts: a blank left as `___` is reported as unfilled rather than
@@ -219,7 +333,7 @@ def summarize(path: Path) -> int:
             continue
         m = _VERDICT_RE.match(line.strip())
         if m and current is not None:
-            pending_verdict = m.group(1).strip().strip("`*").lower()
+            pending_verdict = _parse_verdict(m.group(1))
             continue
         m = _WHY_RE.match(line.strip())
         if m and current is not None and pending_verdict is not None:
@@ -253,9 +367,12 @@ def summarize(path: Path) -> int:
         print("\nCases needing action:")
         for case_id, verdict, why in flagged:
             print(f"  [{verdict}] {case_id}\n        {why or '(no reason given)'}")
-    print("\nA single `wrong` in a sample of this size is worth taking seriously: at n=8 the "
-          "95% CI on a 1/8 error rate runs to roughly 50%, so it bounds the true rate loosely, "
-          "not tightly.")
+    if n_filled:
+        wrong_rate = counts["wrong"] / n_filled
+        lo, hi = wilson_ci(counts["wrong"], n_filled)
+        print(f"\nError rate on the reviewed labels: {counts['wrong']}/{n_filled} = "
+              f"{wrong_rate:.0%}, 95% CI [{lo:.0%}, {hi:.0%}]. At this n the interval is wide; it "
+              f"establishes that a problem exists, not its size.")
     return 0
 
 
@@ -268,6 +385,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", default=str(CASES_PATH))
     parser.add_argument("--xml-dir", default=str(XML_DIR))
     parser.add_argument("--out", default="case_worksheet.md")
+    parser.add_argument("--focus", choices=["case", "strength"], default="case",
+                        help="case (default): is the gold label right at all, on a stratified "
+                             "sample. strength: is the strength value the right point on the "
+                             "scale, over every evidence case.")
     parser.add_argument("--include-held-out", action="store_true",
                         help="also sample held-out cases (off by default; reading a held-out "
                              "case's gold is not a scoring touch, but it is still exposure)")
@@ -283,6 +404,14 @@ def main(argv: list[str] | None = None) -> int:
     if not cases:
         print("No cases to sample.", file=sys.stderr)
         return 1
+
+    if args.focus == "strength":
+        evidence = [c for c in load_jsonl(Path(args.cases)) if not c["is_negative_case"]]
+        evidence.sort(key=lambda c: (c["gold"].get("strength") or "", c["case_id"]))
+        out = args.out if args.out != "case_worksheet.md" else "strength_worksheet.md"
+        Path(out).write_text(render_strength_worksheet(evidence, Path(args.xml_dir), split))
+        print(f"Wrote {out}: {len(evidence)} evidence case(s), grouped by assigned strength.")
+        return 0
 
     picked = sample_cases(cases, args.n, args.seed)
     Path(args.out).write_text(render_worksheet(picked, Path(args.xml_dir), args.seed))

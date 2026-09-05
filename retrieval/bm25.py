@@ -33,7 +33,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from common.corpus_text import extract_section_text
+from common.corpus_text import iter_paragraphs as _iter_paragraphs
 
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-.]*")  # keeps "c.1100delC", "BRCA1" etc. as one token
 
@@ -93,25 +93,29 @@ class BM25Index:
 
     @staticmethod
     def load(path: Path) -> "BM25Index":
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        """A pickle records the module path of every class inside it, so an
+        index built before this module moved (eval/bm25.py to
+        retrieval/bm25.py, 2026-09-04) raises a bare ModuleNotFoundError
+        that says nothing about what to do. Caught here and turned into the
+        instruction: rebuild. The index is git-ignored and regenerable in
+        about 100 seconds, so rebuilding is always the right answer."""
+        try:
+            with open(path, "rb") as f:
+                return pickle.load(f)
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                f"{path} was pickled against a module layout that no longer exists "
+                f"({exc}). Rebuild it: see eval/README.md, 'bm25.py: hand-built retrieval'."
+            ) from exc
 
 
 def iter_paragraphs(xml_path: Path, pmcid: str) -> list[Paragraph]:
-    """All abstract + body paragraphs for one article, offsets matching
-    corpus_text.extract_section_text's "\\n"-join convention exactly (so a
-    result here is directly usable as a gold_span-shaped citation)."""
-    out = []
-    for section in ("abstract", "body"):
-        text = extract_section_text(xml_path, section)
-        if not text:
-            continue
-        offset = 0
-        for para in text.split("\n"):
-            if para.strip():
-                out.append(Paragraph(pmcid, section, offset, offset + len(para), para))
-            offset += len(para) + 1
-    return out
+    """All abstract + body paragraphs for one article, tagged with the pmcid,
+    so a hit here is directly usable as a gold_span-shaped citation. Offsets
+    come from common.corpus_text, which owns the convention."""
+    return [Paragraph(pmcid, section, start, end, text)
+            for section, text, start, end in _iter_paragraphs(xml_path)
+            if text.strip()]
 
 
 def index_from_paragraphs(paragraphs: list[Paragraph]) -> BM25Index:

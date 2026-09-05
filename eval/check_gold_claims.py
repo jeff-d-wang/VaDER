@@ -77,7 +77,18 @@ def gold_claim_text(case: dict) -> str:
     things that carry digits without asserting anything removed first: the
     variant notation (`c.1592delT`, `c.7570G>C` are positions, not
     findings) and gene symbols (`BRCA1/2`, `TP53`)."""
-    parts = [str(case["gold"].get("direction") or ""), str(case["gold"].get("strength") or "")]
+    # strength_detail and qualifier were added by the 2026-09-05 vocabulary
+    # migration and are where the quantitative claims now live. Reading only
+    # direction/strength after that migration would leave this checker
+    # scanning two vocabulary words and finding nothing, forever green and
+    # useless.
+    gold = case["gold"]
+    # `qualifier` is deliberately NOT scanned: it is narrative scope ("2026
+    # modern-treatment cohort", "HER2-positive subtype specifically"), and
+    # the years and subtype names in it are not quantitative claims about
+    # the finding. Including it produced exactly one false positive on the
+    # first run, a publication year read as an unsupported claim.
+    parts = [str(gold.get(k) or "") for k in ("direction", "strength", "strength_detail")]
     text = " ".join(parts)
     variant = case.get("variant")
     if variant:

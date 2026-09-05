@@ -154,5 +154,70 @@ class TestSummarize(unittest.TestCase):
         self.assertEqual(self._parse("nothing here\n"), 1)
 
 
+
+class TestStrengthFocus(unittest.TestCase):
+    """The strength worksheet uses a different heading format from the case
+    worksheet. One parser has to read both, or a filled-in strength review
+    silently summarizes as zero cases (which it did on the first run)."""
+
+    def test_parser_reads_both_heading_formats(self):
+        case_heading = "## Case 3: `abc`"
+        strength_heading = "## 3. `abc`  (dev split)"
+        for heading in (case_heading, strength_heading):
+            m = mcw._CASE_RE.match(heading)
+            self.assertIsNotNone(m, heading)
+            self.assertEqual(m.group(1), "abc")
+
+    def test_strength_case_renders_scale_assignment_and_evidence(self):
+        tmp = tempfile.TemporaryDirectory()
+        xml_dir = Path(tmp.name) / "xml"
+        _write_article(xml_dir, "PMC1", _ABSTRACT)
+        case = _case("ord1", "ordinary",
+                     [{"pmcid": "PMC1", "section": "abstract",
+                       "char_start": 0, "char_end": len(_ABSTRACT)}])
+        case["gold"]["strength"] = "high"
+        case["gold"]["strength_detail"] = "hazard ratio of 3.4"
+        case["gold"]["qualifier"] = "conditional on complete loss"
+        out = mcw.render_strength_case(case, 1, xml_dir, {"ord1": "dev"})
+        self.assertIn("Assigned strength: `high`", out)
+        self.assertIn("hazard ratio of 3.4", out)
+        self.assertIn("conditional on complete loss", out)
+        self.assertIn("hazard ratio of 3.4 (95% CI 2.1-5.5)", out)  # the evidence itself
+        self.assertIn("- **verdict:** ___", out)
+        tmp.cleanup()
+
+
+class TestVerdictParsing(unittest.TestCase):
+    """The worst bug this file has had. A rater wrote five verdicts as
+    "wrong (should be unstated)"; the parser matched only a bare verdict
+    word, discarded all five as unparseable, reported them as UNFILLED, and
+    printed "valid 6 (100%)" over a real 45% error rate. A summary tool
+    that turns corrections into a clean sheet is worse than no tool."""
+
+    def test_bare_verdicts(self):
+        for v in mcw.VERDICTS:
+            self.assertEqual(mcw._parse_verdict(v), v)
+
+    def test_qualified_verdicts_keep_their_verdict(self):
+        for raw, expected in [
+            ("wrong (should be unstated)", "wrong"),
+            ("wrong (should be moderate)", "wrong"),
+            ("wrong (should be low or high)", "wrong"),
+            ("valid, though borderline", "valid"),
+            ("unsure (need the full paper)", "unsure"),
+        ]:
+            self.assertEqual(mcw._parse_verdict(raw), expected, raw)
+
+    def test_case_and_markup_insensitive(self):
+        self.assertEqual(mcw._parse_verdict("**WRONG** (should be low)"), "wrong")
+
+    def test_unfilled_blank_is_still_not_a_verdict(self):
+        self.assertNotIn(mcw._parse_verdict("___"), mcw.VERDICTS)
+
+    def test_a_word_merely_containing_a_verdict_is_not_one(self):
+        """"wrongly" must not parse as "wrong"."""
+        self.assertNotIn(mcw._parse_verdict("wrongly filed"), mcw.VERDICTS)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
