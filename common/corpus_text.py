@@ -32,14 +32,58 @@ class ParseError:
     reason: str
 
 
-def _paragraph_texts(node: ET.Element) -> list[str]:
+def _paragraph_items(node: ET.Element) -> list[tuple[str, ET.Element | None]]:
+    """(text, the <p> element it came from) per paragraph. The element is
+    None for the bare-text fallback below, which has no element of its own.
+
+    Everything that needs per-paragraph metadata derives it from this list,
+    so metadata cannot drift out of alignment with the offsets: both come
+    from one enumeration rather than two that agree by assertion. That is
+    the same failure this module was created to end (see the docstring)."""
     ps = node.findall(".//p")
     if ps:
-        return ["".join(p.itertext()) for p in ps]
+        return [("".join(p.itertext()), p) for p in ps]
     # No <p> children (e.g. some abstracts are a bare <abstract>text</abstract>):
     # fall back to the node's own text as a single "paragraph".
     text = "".join(node.itertext())
-    return [text] if text else []
+    return [(text, None)] if text else []
+
+
+def _paragraph_texts(node: ET.Element) -> list[str]:
+    return [text for text, _ in _paragraph_items(node)]
+
+
+def _enclosing_sec_title(element: ET.Element | None,
+                         parents: dict[ET.Element, ET.Element]) -> str | None:
+    """The <title> of the nearest <sec> ancestor, or None. Walks up via an
+    explicit parent map because ElementTree elements carry no parent link."""
+    current = element
+    while current is not None:
+        if current.tag == "sec":
+            title = current.find("title")
+            if title is not None:
+                text = " ".join("".join(title.itertext()).split())
+                if text:
+                    return text
+        current = parents.get(current)
+    return None
+
+
+def section_titles_from_root(root: ET.Element, section: str) -> list[str | None]:
+    """The enclosing <sec> title for each paragraph of a section, aligned
+    index for index with iter_paragraphs_from_root's yields.
+
+    Phase C stratifies the retrieval eval set by section type (methods
+    paragraphs retrieve nothing like results paragraphs), and JATS records
+    that as a free-text <title>, not an attribute. Returned raw; deciding
+    that "Patients and methods" is a methods section is a caller's judgment,
+    not this module's convention."""
+    tag = SECTION_TAGS.get(section)
+    node = root.find(f".//{tag}") if tag else None
+    if node is None:
+        return []
+    parents = {child: parent for parent in node.iter() for child in parent}
+    return [_enclosing_sec_title(element, parents) for _, element in _paragraph_items(node)]
 
 
 def parse_root(xml_path: Path) -> ET.Element | None:
@@ -155,3 +199,24 @@ def load_span_text(xml_dir: Path, pmcid: str, section: str, char_start: int, cha
     if char_start < 0 or char_end > len(section_text) or char_start >= char_end:
         return None, "out_of_range"
     return section_text[char_start:char_end], None
+
+
+def spans_overlap(a: dict, b: dict) -> bool:
+    """Do two (pmcid, section, char_start, char_end) spans cover any of the
+    same source text?
+
+    This is the hit test the retrieval eval set needs: PROJECT_PLAN's rule 5
+    attaches gold labels to source spans, never to chunk ids, so "did
+    retrieval find it" means "does a returned span overlap a gold span".
+    Chunk ids change whenever the chunker changes; source offsets do not,
+    which is what makes the chunking ablation computable at all.
+
+    Half-open intervals, so spans that merely touch (one ends exactly where
+    the next begins) do NOT overlap. Paragraph offsets in this corpus are
+    built by joining on a single separator character, so adjacent paragraphs
+    share a boundary; counting that as a hit would credit a retriever for
+    returning the paragraph next to the right one."""
+    return (a["pmcid"] == b["pmcid"]
+            and a["section"] == b["section"]
+            and a["char_start"] < b["char_end"]
+            and b["char_start"] < a["char_end"])

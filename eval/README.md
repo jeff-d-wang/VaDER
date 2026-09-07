@@ -20,7 +20,8 @@ python -m unittest discover             # every test in the project
 | `baselines/` | the generators the scorer grades: no-retrieval, BM25-only, oracle-span. `_runner.py` holds the shared prompt and citation mapping |
 | `benchmarks/` | SciFact and NFCorpus, for checking the harness against known-good labels |
 | `find_coverage.py`, `hold_out_case.py`, `mine_rare_variants.py` | building cases |
-| `verify_spans.py`, `check_gold_claims.py`, `verify_negative_cases.py` | keeping cases honest |
+| `verify_spans.py`, `check_gold_claims.py`, `verify_negative_cases.py` | keeping answer cases honest |
+| `build_retrieval_set.py`, `score_retrieval.py`, `verify_retrieval_set.py` | the phase C retrieval set: build it, score a retriever on it, keep it honest |
 | `make_case_worksheet.py` | putting cases in front of a human to validate |
 | `kappa.py` | judge calibration statistic |
 | `compare_runs.py` | paired McNemar between two scored runs |
@@ -30,12 +31,13 @@ python -m unittest discover             # every test in the project
 Retrieval itself lives in `retrieval/`, not here: eval measures retrieval, and the dependency runs
 one way. Corpus access (XML to text, sections, char offsets) lives in `common/`.
 
-**Three checks worth running after touching the eval set**, all fast:
+**Four checks worth running after touching either eval set**, all fast:
 
 ```
 python -m eval.verify_spans            # do gold spans resolve, and are they about the right variant
 python -m eval.check_gold_claims       # does a gold label assert numbers its spans don't contain
 python -m eval.verify_negative_cases   # are the negative cases still negative
+python -m eval.verify_retrieval_set    # does the retrieval set still point at the text it was built on
 ```
 
 ## find_coverage.py
@@ -269,17 +271,26 @@ Build once, reuse:
 
 ```
 python -c "
-import csv, sys; sys.path.insert(0, '.')
-from bm25 import build_index
+import csv
 from pathlib import Path
-pmcids = [r['pmcid'] for r in csv.DictReader(open('../corpus/manifest.csv')) if r.get('status')=='ok']
-build_index(Path('../corpus/xml'), pmcids).save(Path('runs/bm25_index.pkl'))
+from retrieval.bm25 import build_index
+pmcids = [r['pmcid'] for r in csv.DictReader(open('corpus/manifest.csv'))]
+build_index(Path('corpus/xml'), pmcids).save(Path('eval/runs/bm25_index.pkl'))
 "
 ```
 
-Takes about 50 seconds over the full 7,863-article corpus (437k paragraphs), single-process. The
-resulting `.pkl` is about 600 MB, git-ignored under `eval/runs/`, rebuild rather than expect it to
-already exist. `baselines/bm25_only.py --index runs/bm25_index.pkl --out runs/bm25_only_answers.jsonl`
+Takes about 35 seconds over the full 7,863-article corpus (344,900 paragraphs), single-process. The
+resulting `.pkl` is about 575 MB, git-ignored under `eval/runs/`, rebuild rather than expect it to
+already exist.
+
+**Rebuild it after any change to `common/corpus_text.py`, and do not trust one you did not build.**
+The index is a cache, and an audit of code does not reach a cache. The pickle in place until
+2026-09-05 held 436,834 records built by a `"\n"`-join/split round trip that treated JATS line
+wrapping inside a `<p>` as a paragraph boundary, so it was an index of **sentence fragments**:
+2,273 of them for one article the current extractor reads as 186 paragraphs. Nothing caught it for
+fourteen hours because the fragments' offsets were *correct*, so every offset check in the repo
+passed. `score_retrieval.py` now refuses to report a number when a gold span is missing from the
+index it was handed, which is the check that finally found it. `baselines/bm25_only.py --index runs/bm25_index.pkl --out runs/bm25_only_answers.jsonl`
 retrieves top-8 paragraphs per query and asks the model to answer from only those, citing them by
 index, mapped back to real spans before scoring, same schema and scorer as `no_retrieval.py`.
 
@@ -538,6 +549,76 @@ The worksheet generator and worksheet parser that used to sit alongside it were 
 code by `labels.py` and have no judge left to calibrate, the human calibration is deliberately
 skipped for M1 (`docs/DECISION_LOG.md`), and `make_case_worksheet.py` already renders and parses
 worksheets of both shapes. Recover them from git history if a real person sits down to rate.
+
+## The retrieval set (phase C)
+
+`data/retrieval_cases.jsonl`, built by `build_retrieval_set.py` and scored by
+`score_retrieval.py`. This is `PROJECT_PLAN.md`'s **n>=300 `retrieval` set**, the one every
+retrieval ablation from phase D on gets measured against. The answer set cannot do that job: at
+n=8 on the scored properties one case is 12.5 points, and a chunker or a reranker moves recall by
+three.
+
+**One paragraph, two queries.** Each sampled corpus paragraph goes to the model once and comes
+back as *anchors* plus two queries about the same fact: a `lexical` one phrased in the paragraph's
+own wording, and a `paraphrased` one saying it differently. Both rows carry the same
+`paragraph_id` and the same gold span, so the pair is a paired comparison and the lexical bias
+this construction is known to have becomes a measured gap instead of a caveat. The anchors are
+held **verbatim** in both, so the contrast isolates prose wording; varying the identifier form
+(`c.1100delC` against `1100delC` against an rsID) is phase D's exact-identifier case, deliberately
+separate.
+
+| Field | Meaning |
+|---|---|
+| `query_id`, `paragraph_id`, `style` | `paragraph_id` joins the pair; `style` is `lexical` or `paraphrased` |
+| `query` | what the retriever is given |
+| `gold_span` | `{pmcid, section, char_start, char_end}`, the paragraph itself, per standing rule 5 |
+| `stratum`, `section_title` | `abstract`, `intro`, `methods`, `results`, `discussion`, `body_other`, and the raw JATS `<sec>` title it was derived from |
+| `pub_year`, `anchors`, `gold_text_chars` | from the Step 0b manifest; the anchors the filters checked; paragraph length |
+| `lexical_overlap` | share of the query's distinct tokens present in the gold paragraph. **This is the per-row lexical-bias number.** 1.0 means BM25 was handed the answer |
+| `created_by`, `model`, `validated_by` | provenance. `validated_by` stays null until a person has read the row in a worksheet |
+
+**Three things to know before reading a number off this set.**
+
+1. **It is section-balanced, not corpus-proportional.** Equal quotas per stratum, so methods is
+   reportable on its own. No row here is "recall on this corpus"; it is recall on a
+   section-balanced probe of it.
+2. **Judgments are single-gold.** Another paragraph may answer a query as well as the gold one and
+   scores as a miss. `score_retrieval.py --measure-holes N` measures how often, with a CI. Recall
+   off this set is a lower bound by roughly that much.
+3. **The queries were written by a model looking at the answer.** That is the whole lexical-bias
+   problem, and `--calibrate-overlap` puts our overlap distribution next to SciFact's and
+   NFCorpus's human-written queries so the number has a reference point.
+
+```
+python -m eval.build_retrieval_set --limit 4 --out runs/smoke.jsonl   # smoke test, 4 paragraphs
+python -m eval.build_retrieval_set                                    # the real build, resumable
+python -m eval.build_retrieval_set --calibrate-overlap                # overlap vs BEIR queries
+python -m eval.build_retrieval_set --worksheet 20                     # the hand spot-check
+python -m eval.make_case_worksheet --summarize retrieval_worksheet.md # ... once it is filled in
+python -m eval.score_retrieval --out runs/retrieval_bm25.json --measure-holes 40
+```
+
+**The build is slow and that is the free tier, not the code.** Groq caps this key at 8,000 tokens
+per minute, so a few hundred generation calls take hours. It is resumable by design: rows are
+flushed as they are accepted and a rerun skips paragraphs already in the output file, so an
+interrupted build costs nothing but the call in flight.
+
+**`verify_retrieval_set.py` is the standing check**, and it is not the same thing as the
+build-time filters. Those run once, against the model's output, and never again. This one re-checks
+the file against the corpus as it is now: every gold span still resolves to the same text (by
+content **hash**, not length, because a span is read by slicing and a same-length edit inside it
+would otherwise be invisible), every anchor is still in the paragraph and in both queries, every
+stored `lexical_overlap` still recomputes to its stored value (it depends on the BM25 tokenizer,
+so a tokenizer change silently invalidates every one of them), pairs are complete, and no row
+cites a held-out article. It also warns when one article supplies many paragraphs, because those
+queries are correlated and the per-query bootstrap CI assumes they are not.
+
+**It is not validated until a person has read some of it.** `--worksheet 20` renders paragraphs
+with both their queries and the real source text, for the review `PROJECT_PLAN.md`'s phase C asks
+for. The mechanical filters can prove an anchor came from the paragraph; they cannot tell whether
+the query is one anyone would ask. Unreviewed agent-written labels have run about 50% defective
+twice in this project, so treat every number off this set as provisional until that sheet is
+filled in.
 
 ## TODO: growing the answer set
 

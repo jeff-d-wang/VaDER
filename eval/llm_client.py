@@ -80,7 +80,8 @@ def _parse_retry_seconds(resp) -> float:
 
 
 def groq_chat_json(prompt: str, *, model: str = DEFAULT_MODEL, api_key: str | None = None,
-                    temperature: float = 0.0, timeout_s: float = 30.0, max_retries: int = 5) -> dict:
+                    temperature: float = 0.0, timeout_s: float = 30.0, max_retries: int = 5,
+                    reasoning_effort: str | None = None) -> dict:
     """Sends `prompt` as a single user message, asks for a JSON object back
     (Groq's response_format json_object mode), and returns it parsed. Raises
     on a non-2xx response (other than 429, retried) or unparseable JSON;
@@ -88,7 +89,18 @@ def groq_chat_json(prompt: str, *, model: str = DEFAULT_MODEL, api_key: str | No
     default, a judge or baseline call that fails should be visibly missing,
     not silently wrong. A 429 is retried with the server's own requested
     backoff (see _parse_retry_seconds), up to max_retries times, since it's
-    routine on the free tier, not a real failure."""
+    routine on the free tier, not a real failure.
+
+    `reasoning_effort` ("low"/"medium"/"high") is a gpt-oss knob and is
+    omitted from the request entirely when None, so every call that does not
+    pass it sends the identical body it sent before this parameter existed
+    and every run logged in docs/RESULTS.md stays reproducible. It exists
+    because the free tier's binding limit is 8,000 tokens per MINUTE, and on
+    this project's query-generation prompt the default spends 730 tokens of
+    that on reasoning against 127 at "low" (measured 2026-09-05: 1,402 total
+    tokens per call against 799). That is the difference between a build
+    taking 90 minutes and taking three hours. Pass it for bulk mechanical
+    work; do not pass it for judging."""
     import time
     import httpx  # local import: only needed when actually calling the API
     key = require_api_key(api_key)
@@ -101,6 +113,7 @@ def groq_chat_json(prompt: str, *, model: str = DEFAULT_MODEL, api_key: str | No
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": temperature,
                 "response_format": {"type": "json_object"},
+                **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
             },
             timeout=timeout_s,
         )

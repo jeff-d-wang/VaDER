@@ -21,9 +21,10 @@ Phase D's real pipeline is the fourth baseline. It should import from here.
 from __future__ import annotations
 
 import json
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+
+from common.run_meta import config_hash, git_sha
 
 CASES_PATH = Path(__file__).parent.parent / "data" / "answer_cases.jsonl"
 
@@ -73,15 +74,6 @@ def load_cases(path: Path = CASES_PATH) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def git_sha() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent, text=True,
-        ).strip()
-    except Exception:
-        return "unknown"
-
-
 def format_excerpts(excerpts: list[tuple[dict, str]]) -> str:
     """`excerpts` is [(span, text)], span being a dict with at least pmcid
     and section. Numbered from 1, matching what the prompt asks the model to
@@ -129,10 +121,12 @@ def write_run(out_path: Path, answers: list[dict], model: str, prompt_version: s
         for a in answers:
             f.write(json.dumps(a) + "\n")
 
+    config = {"model": model, "prompt_version": prompt_version, "git_sha": git_sha(),
+              **extra_meta}
     meta = {
-        "model": model, "prompt_version": prompt_version, "git_sha": git_sha(),
+        **config,
+        "config_hash": config_hash(config),
         "n_cases": len(answers), "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        **extra_meta,
     }
     meta_path = Path(str(out_path) + ".meta.json")
     meta_path.write_text(json.dumps(meta, indent=2))

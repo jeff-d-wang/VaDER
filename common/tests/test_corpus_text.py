@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from xml.etree import ElementTree as ET
 from pathlib import Path
 
 from common.corpus_text import (extract_section_text, iter_paragraphs,
-                                iter_paragraphs_from_root, parse_root)
+                                iter_paragraphs_from_root, parse_root,
+                                section_titles_from_root, spans_overlap)
 
 WITH_PARAGRAPHS = """<article>
   <front><article-meta><title-group><article-title>A Title</article-title></title-group></article-meta></front>
@@ -115,5 +117,64 @@ class TestConsumersAgree(unittest.TestCase):
                              (span.section, span.char_start, span.char_end))
 
 
+
+class TestSpansOverlap(unittest.TestCase):
+    @staticmethod
+    def _s(start, end, pmcid="PMC1", section="abstract"):
+        return {"pmcid": pmcid, "section": section, "char_start": start, "char_end": end}
+
+    def test_partial_overlap_counts(self):
+        self.assertTrue(spans_overlap(self._s(0, 100), self._s(50, 150)))
+
+    def test_containment_counts_either_way(self):
+        self.assertTrue(spans_overlap(self._s(0, 100), self._s(10, 20)))
+        self.assertTrue(spans_overlap(self._s(10, 20), self._s(0, 100)))
+
+    def test_disjoint_does_not(self):
+        self.assertFalse(spans_overlap(self._s(0, 50), self._s(60, 100)))
+
+    def test_touching_spans_do_not_overlap(self):
+        """Adjacent paragraphs share a boundary because section text is
+        joined on one separator char. Counting that as a hit would credit a
+        retriever for returning the paragraph next to the right one."""
+        self.assertFalse(spans_overlap(self._s(0, 50), self._s(50, 100)))
+
+    def test_different_article_or_section_never_overlaps(self):
+        self.assertFalse(spans_overlap(self._s(0, 100), self._s(0, 100, pmcid="PMC2")))
+        self.assertFalse(spans_overlap(self._s(0, 100), self._s(0, 100, section="body")))
+
+
+NESTED_SECS = """<article>
+  <abstract><p>Abstract para.</p></abstract>
+  <body>
+    <sec><title>Introduction</title><p>Intro para.</p></sec>
+    <sec><title>Patients and methods</title>
+      <p>Methods para.</p>
+      <sec><title>Statistical analysis</title><p>Stats para.</p></sec>
+    </sec>
+    <p>An orphan paragraph in no sec at all.</p>
+  </body>
+</article>"""
+
+
+class TestSectionTitles(unittest.TestCase):
+    def titles(self, section):
+        return section_titles_from_root(ET.fromstring(NESTED_SECS), section)
+
+    def test_aligned_with_the_paragraph_enumeration(self):
+        root = ET.fromstring(NESTED_SECS)
+        paragraphs = list(iter_paragraphs_from_root(root, "body"))
+        self.assertEqual(len(paragraphs), len(self.titles("body")),
+                         "titles must be index-for-index with the offsets they describe")
+
+    def test_nearest_enclosing_sec_wins(self):
+        self.assertEqual(self.titles("body"),
+                         ["Introduction", "Patients and methods", "Statistical analysis", None])
+
+    def test_no_sec_structure_gives_none(self):
+        self.assertEqual(self.titles("abstract"), [None])
+
+    def test_absent_section_gives_empty_list(self):
+        self.assertEqual(section_titles_from_root(ET.fromstring(NESTED_SECS), "nope"), [])
 if __name__ == "__main__":
     unittest.main()

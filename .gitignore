@@ -52,6 +52,7 @@ eval/kappa_worksheet*.md
 eval/case_worksheet*.md
 strength_worksheet*.md
 eval/strength_worksheet*.md
+eval/retrieval_worksheet*.md
 
 # eval/benchmarks/: downloaded benchmark datasets (SciFact, NFCorpus, etc.)
 # are regenerable from download_datasets.py. Code (loader.py, test_loader.py)
