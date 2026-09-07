@@ -5,8 +5,9 @@ and also satisfies the project's own rule to implement at least one
 component with no library (`START_HERE.md` standing rule 2 / the
 "Protecting the learning" section of `PROJECT_PLAN.md`).
 
-Indexes at paragraph granularity (title + abstract + body paragraphs), each
-record carrying real provenance, (pmcid, section, char_start, char_end),
+Indexes at paragraph granularity (abstract and body paragraphs; the title
+is not indexed), each record carrying real provenance,
+(pmcid, section, char_start, char_end),
 using the exact offset convention corpus_text.py already established
 (paragraphs joined by "\\n"), so a BM25 hit is a real, citable span, not
 just a ranked document id.
@@ -20,9 +21,18 @@ term that appears in over half the corpus, e.g. "cancer" here):
 
     idf(t) = ln((N - n(t) + 0.5) / (n(t) + 0.5) + 1)
 
-k1=1.5, b=0.75: the standard textbook defaults (Robertson & Zaragoza 2009),
-not tuned against this corpus. Tuning k1/b against the retrieval eval set is
-future work once that set (n>=300) exists; not worth doing against 19 cases.
+k1 and b are parameters, defaulting to k1=1.5, b=0.75, and `search` takes
+overrides so a comparison needs no re-indexing (they affect scoring only,
+never the index).
+
+**On the defaults.** Robertson & Zaragoza (2009) give k1 as a RANGE, usually
+1.2 to 2.0, with b=0.75. This module's docstring previously called k1=1.5
+"the standard textbook default", which was too strong: the widely deployed
+single default, in Lucene and Elasticsearch, is k1=1.2. Corrected 2026-09-06
+after the user asked whether 1.2 had ever been tried. It had not. See
+docs/DECISION_LOG.md, "does k1=1.2 beat k1=1.5", for what the comparison
+found and why it was run against BEIR rather than against this project's own
+domain set.
 """
 from __future__ import annotations
 
@@ -67,7 +77,7 @@ class BM25Index:
         n_t = self.doc_freq.get(term, 0)
         return math.log((self.n_docs - n_t + 0.5) / (n_t + 0.5) + 1)
 
-    def score(self, query_terms: list[str], i: int) -> float:
+    def score(self, query_terms: list[str], i: int, k1: float = K1, b: float = B) -> float:
         tf = self.term_freqs[i]
         dl = self.doc_lengths[i]
         total = 0.0
@@ -75,14 +85,16 @@ class BM25Index:
             f = tf.get(t, 0)
             if f == 0:
                 continue
-            numerator = f * (K1 + 1)
-            denominator = f + K1 * (1 - B + B * dl / self.avg_doc_length)
+            numerator = f * (k1 + 1)
+            denominator = f + k1 * (1 - b + b * dl / self.avg_doc_length)
             total += self.idf(t) * numerator / denominator
         return total
 
-    def search(self, query: str, top_k: int = 5) -> list[tuple[Paragraph, float]]:
+    def search(self, query: str, top_k: int = 5,
+               k1: float = K1, b: float = B) -> list[tuple[Paragraph, float]]:
+        """k1/b are scoring-time parameters, so a sweep reuses one index."""
         terms = tokenize(query)
-        scored = [(i, self.score(terms, i)) for i in range(self.n_docs)]
+        scored = [(i, self.score(terms, i, k1, b)) for i in range(self.n_docs)]
         scored = [(i, s) for i, s in scored if s > 0]
         scored.sort(key=lambda pair: pair[1], reverse=True)
         return [(self.paragraphs[i], s) for i, s in scored[:top_k]]

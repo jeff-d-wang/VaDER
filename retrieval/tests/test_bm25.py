@@ -109,3 +109,41 @@ class TestBm25(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestK1AndBAreParameters(unittest.TestCase):
+    """k1/b affect scoring only, never the index, so a comparison must not
+    need a rebuild. Added 2026-09-06 with the k1=1.2 comparison."""
+
+    def setUp(self):
+        from retrieval.bm25 import build_index_from_texts
+        self.index = build_index_from_texts([
+            ("d1", "brca1 variant carriers breast cancer risk"),
+            ("d2", "brca1 brca1 brca1 variant variant carriers"),
+            ("d3", "unrelated zebrafish embryo development study"),
+        ])
+
+    def test_defaults_match_the_module_constants(self):
+        from retrieval.bm25 import B, K1
+        terms = ["brca1", "variant"]
+        self.assertEqual(self.index.score(terms, 0),
+                         self.index.score(terms, 0, K1, B))
+
+    def test_k1_changes_the_score(self):
+        terms = ["brca1"]
+        self.assertNotEqual(round(self.index.score(terms, 1, 1.2, 0.75), 9),
+                            round(self.index.score(terms, 1, 1.5, 0.75), 9))
+
+    def test_lower_k1_saturates_repeated_terms_sooner(self):
+        """The whole point of k1: it caps how much a repeated term keeps
+        adding. d2 repeats "brca1" three times, d1 once, so a lower k1 should
+        narrow the gap between them."""
+        terms = ["brca1"]
+        gap12 = self.index.score(terms, 1, 1.2, 0.75) - self.index.score(terms, 0, 1.2, 0.75)
+        gap15 = self.index.score(terms, 1, 1.5, 0.75) - self.index.score(terms, 0, 1.5, 0.75)
+        self.assertLess(gap12, gap15)
+
+    def test_search_passes_the_parameters_through(self):
+        a = self.index.search("brca1 variant", top_k=3, k1=1.2)
+        b = self.index.search("brca1 variant", top_k=3, k1=1.5)
+        self.assertNotEqual([s for _, s in a], [s for _, s in b])
