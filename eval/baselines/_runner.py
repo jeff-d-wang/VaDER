@@ -24,7 +24,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common.run_meta import config_hash, git_sha
+from common.run_meta import append_run, config_hash, git_sha
 
 CASES_PATH = Path(__file__).parent.parent / "data" / "answer_cases.jsonl"
 
@@ -130,5 +130,12 @@ def write_run(out_path: Path, answers: list[dict], model: str, prompt_version: s
     }
     meta_path = Path(str(out_path) + ".meta.json")
     meta_path.write_text(json.dumps(meta, indent=2))
+
+    # Run registry: ties this results file to a commit and a config. Scored
+    # metrics land in RESULTS.md via score.py; the row here is attribution.
+    run_id = append_run(eval_set="answer", run_config=config, results_path=str(out_path),
+                        metrics={"n_answers": len(answers)})
+
     print(f"Wrote {len(answers)} answers to {out_path}")
     print(f"Wrote run metadata to {meta_path}")
+    print(f"Registered run {run_id}")

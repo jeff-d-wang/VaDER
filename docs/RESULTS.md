@@ -513,6 +513,31 @@ to measure.
 > and their exact code state is not recoverable. Left visible rather than quietly deleted; the rows
 > they sit on are already marked superseded.
 
+### Phase B, M2 instrumentation spine: a traced request (2026-09-06)
+
+Phase B's exit is "a traced request with per-stage latency and cost," not a quality number.
+`common/trace.py` emits one JSONL span per stage under OpenTelemetry GenAI semantic-convention
+attribute names; `eval/baselines/bm25_only.py` now wraps each case in a trace. One evidence case
+(`chek2_1100delc_prognosis_disagree_001`) run end to end, cold index load excluded:
+
+| Stage | Span | Duration | gen_ai attributes |
+|---|---|---|---|
+| retrieve | `retrieve` (child) | 3933.3 ms | `retrieval.hit_count=8` |
+| generate | `chat` (child) | 3663.0 ms | `input_tokens=2253`, `output_tokens=597`, `request.model=openai/gpt-oss-120b`, `vader.cost_usd=0.0` |
+| request | `bm25_only` (root) | 8431.2 ms | `case_id=chek2_1100delc_prognosis_disagree_001` |
+
+Not a `RESULTS.md` table row: it is one un-replicated request, not a distribution, and every
+number here is superseded the moment phase E measures p95 off the real service path. What it
+establishes is that the spine works: retrieve and generate are separately attributable, tokens
+and cost are captured per call, and the ~835 ms unaccounted between the child spans and the root
+is real in-request overhead the trace makes visible rather than hides. `vader.cost_usd` is `0.0`
+because the free-tier model is genuinely free; an unpriced model would record `null`, not `0`.
+The 3.9 s retrieve time is the known BM25 full-scan cost (`DECISION_LOG.md`, "BM25 search is a
+full scan"), now with a per-stage number attached.
+
+Run registry: `eval/run_registry.jsonl`, one row per `write_run` / `score_retrieval --out`,
+carrying `git_sha`, `pipeline_config_hash` (of `config/vader.yaml`), and `run_config_hash`.
+
 ## Metric families
 
 Keep names consistent so rows stay comparable over the whole project.

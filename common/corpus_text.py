@@ -220,3 +220,30 @@ def spans_overlap(a: dict, b: dict) -> bool:
             and a["section"] == b["section"]
             and a["char_start"] < b["char_end"]
             and b["char_start"] < a["char_end"])
+
+
+@dataclass
+class Chunk:
+    """A retrieval unit that carries provenance back to source offsets.
+
+    START_HERE.md rule 5: a gold label attaches to a source span, never to a
+    chunk id, so a chunk must record the spans it was built from. Defined here
+    in phase B, before phase D's chunker exists, because this is the one schema
+    decision that cannot be retrofitted without a full re-index.
+
+    `source_spans` is a list, not a single span: phase D's structure-aware
+    chunker may merge adjacent JATS paragraphs into one chunk, and each of
+    those paragraphs is its own (section, char_start, char_end).
+    """
+    chunk_id: str
+    pmcid: str
+    text: str
+    source_spans: list[dict]  # each: {"section", "char_start", "char_end"}
+
+
+def chunk_hits_span(chunk: Chunk, gold: dict) -> bool:
+    """A chunk is a hit if any of its source spans overlaps the gold span."""
+    return any(
+        spans_overlap({"pmcid": chunk.pmcid, **s}, gold)
+        for s in chunk.source_spans
+    )

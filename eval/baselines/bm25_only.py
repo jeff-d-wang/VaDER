@@ -24,6 +24,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from common.trace import span, trace_request
 from eval.baselines._runner import (EXCERPT_PROMPT, answer_from, format_excerpts,
                                     load_cases, map_claims, write_run)
 from eval.llm_client import DEFAULT_MODEL, groq_chat_json
@@ -38,21 +39,25 @@ def run(cases: list[dict], index: BM25Index, model: str, top_k: int) -> list[dic
     for case in cases:
         if case["stratum"] != "evidence":
             continue
-        hits = index.search(case["query"], top_k=top_k)
-        if not hits:
-            answers.append({
-                "case_id": case["case_id"], "direction": None, "strength": None,
-                "not_found": True, "answer_text": "No retrieval hits for this query.", "claims": [],
-            })
-            continue
+        with trace_request("bm25_only", case_id=case["case_id"]):
+            with span("retrieve", retriever="bm25", top_k=top_k) as s:
+                hits = index.search(case["query"], top_k=top_k)
+                s["retrieval.hit_count"] = len(hits)
+            if not hits:
+                answers.append({
+                    "case_id": case["case_id"], "direction": None, "strength": None,
+                    "not_found": True, "answer_text": "No retrieval hits for this query.",
+                    "claims": [],
+                })
+                continue
 
-        excerpts = [({"pmcid": para.pmcid, "section": para.section,
-                      "char_start": para.char_start, "char_end": para.char_end}, para.text)
-                    for para, _score in hits]
-        out = groq_chat_json(
-            EXCERPT_PROMPT.format(query=case["query"], excerpts=format_excerpts(excerpts)),
-            model=model)
-        answers.append(answer_from(case, out, map_claims(out.get("claims"), excerpts)))
+            excerpts = [({"pmcid": para.pmcid, "section": para.section,
+                          "char_start": para.char_start, "char_end": para.char_end}, para.text)
+                        for para, _score in hits]
+            out = groq_chat_json(
+                EXCERPT_PROMPT.format(query=case["query"], excerpts=format_excerpts(excerpts)),
+                model=model)
+            answers.append(answer_from(case, out, map_claims(out.get("claims"), excerpts)))
     return answers
 
 

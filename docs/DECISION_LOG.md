@@ -2666,3 +2666,69 @@ was rewritten, and the reason for not rewriting it is part of the decision.
   - **Still not done: tuning `b`, and tuning anything on the domain set.** Both remain deliberately
     deferred, `b` because the domain set is currently ~55% defective and the v4 audit reserved that
     set's independence for phase D's chunker ablation.
+
+---
+
+## Design decision: Phase B / M2 instrumentation spine, the build shape
+
+- **Date / module:** Tier 1 phase B (M2), 2026-09-06. Logged before building. The depth call
+  ("hand-written span emitter writing JSONL, OTel GenAI semconv attribute names, OTLP exporter and
+  a Phoenix/Langfuse backend deferred") was already made in "v4 plan audit"; this entry records
+  what actually gets built and what is deliberately left for later phases.
+- **Decision:** four pieces, each the smallest thing that satisfies the phase B exit
+  ("a traced request with per-stage latency and cost") and `CLAUDE.md`'s config-as-code rule.
+  1. **`common/trace.py`**, a hand-written span emitter. A `trace_request(name, **attrs)` context
+     manager opens a trace (a `contextvars` id plus a span stack); `span(name, **attrs)` opens a
+     child span, times it with `time.monotonic`, and on exit appends one JSON line to
+     `VADER_TRACE_FILE` (default `traces/spans.jsonl`, git-ignored). With no active trace `span`
+     is a no-op that still runs its body, so instrumented code stays callable from unit tests and
+     ad-hoc scripts. Span records use the OpenTelemetry GenAI semantic-convention attribute names
+     (`gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`,
+     `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) plus a project-namespaced
+     `vader.cost_usd`. There is no semconv attribute for cost; namespacing it keeps the standard
+     names standard. `record_llm_usage(span, provider, model, input_tokens, output_tokens)` sets
+     those and computes cost from a small per-model price table (per-Mtok input/output). The
+     free-tier default model is `$0`; an unknown model gets `cost_usd: null`, not `0`, so "we do
+     not price this" never reads as "free".
+  2. **`config/vader.yaml`**, the one config-as-code file: `chunker`, `embedder`, `index`,
+     `retriever`, `reranker`, `generation_model`, `judge_model`, `prompt_version`, and a `bm25`
+     block (`k1`, `b`, `top_k`) matching `retrieval/bm25.py`'s current constants. Fields for
+     machinery that does not exist yet (`chunker: none`, `embedder: none`, `reranker: none`) are
+     named now so a later phase fills a value instead of adding a key.
+  3. **`common/run_meta.load_config()`** parses that YAML; **`append_run()`** appends one row to
+     `eval/run_registry.jsonl` per eval run: `run_id`, `git_sha`, `pipeline_config_hash`
+     (`config_hash` of the YAML), `run_config_hash` (`config_hash` of the run-specific dict the
+     script already builds), `eval_set`, `results_path`, a small `metrics` dict, and a UTC
+     timestamp. This threads the YAML hash into every run's output as `CLAUDE.md` requires,
+     without rewiring the scripts' existing per-run config dicts.
+  4. **`common/corpus_text.Chunk`**, the provenance-carrying retrieval-unit schema, plus
+     `chunk_hits_span(chunk, gold)`. A `Chunk` is `chunk_id`, `pmcid`, `text`, and
+     `source_spans: list[{section, char_start, char_end}]` (a list because phase D's chunker may
+     merge adjacent paragraphs). `chunk_hits_span` is `any(spans_overlap(...) for s in
+     source_spans)`, reusing the existing hit function. Defined here, in phase B, before any
+     chunker exists, because per rule 5 it is the one thing that cannot be retrofitted without a
+     re-index.
+- **Wired now:** `eval/llm_client.groq_chat_json` emits a `chat` span carrying the `gen_ai.*`
+  usage and cost from the response's `usage` block (no-op when untraced, so every existing caller
+  and test is unaffected). `eval/baselines/bm25_only.py` wraps each case in `trace_request` with a
+  `retrieve` span around the BM25 search, which produces the phase B exit artifact: one trace per
+  request with a retrieve stage (latency) and a generate stage (latency, tokens, cost).
+  `_runner.write_run` and `score_retrieval.main` call `append_run`.
+- **Deliberately deferred, not dropped:**
+  - The OTLP exporter and a self-hosted Phoenix/Langfuse backend. Deferred in the v4 audit until
+    there is traffic worth looking at; the JSONL is greppable in the meantime.
+  - Migrating the baseline scripts to read `model` / `k1` / `top_k` *from* `vader.yaml` instead of
+    from CLI args and module constants. `score_retrieval.py` already parameterises these; the YAML
+    is the declared, hashed description of the pipeline and consumers adopt it as they are touched
+    in phases C and D.
+  - Tracing `service/app.py`. The stub handler makes no LLM calls, so there is nothing to
+    stage-break yet. Phase E, which replaces the stub, wires the tracer into the request path.
+- **Alternatives considered:** full OpenTelemetry SDK plus a local Phoenix instance now (rejected
+  in the v4 audit: a day or two of setup against Development-status conventions before a single
+  retrieval number exists). A separate `common/config.py` and `common/pricing.py` (rejected:
+  `run_meta.py` already owns the run stamp and a price table is a dict, not a module). Attaching
+  `source_spans` as a single span rather than a list (rejected: forecloses the merge-adjacent
+  chunker in phase D, and that is the retrofit the schema exists to prevent).
+- **Reversibility:** cheap. `trace.py` is additive and no-op by default. The YAML schema is a
+  config edit. The one hard-to-reverse piece is `Chunk.source_spans` being a list, which is the
+  shape chosen precisely so it does not need reversing.

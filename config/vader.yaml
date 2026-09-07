@@ -1,0 +1,23 @@
+# The one config-as-code file (CLAUDE.md, "Config-as-code, early").
+# It names the pipeline: chunker, embedder, index, retriever, reranker, model,
+# prompt version. common.run_meta.config_hash(load_config(...)) is the
+# pipeline_config_hash stamped into every eval run's registry row, so a strategy
+# change is an edit here plus a harness rerun, not a bespoke script.
+#
+# Fields set to `none` are machinery that does not exist yet. They are named now
+# so a later phase fills a value rather than adding a key.
+
+chunker: none          # phase D: hand-written structure-aware JATS chunker
+embedder: none         # tier 2: bge-small-en-v1.5, local CPU
+index: bm25            # phase D: BM25 over chunks; tier 2 adds Qdrant
+retriever: bm25
+reranker: none         # tier 2
+
+generation_model: openai/gpt-oss-120b   # Groq free tier
+judge_model: openai/gpt-oss-120b
+prompt_version: excerpt_v1
+
+bm25:                  # matches retrieval/bm25.py's K1 / B constants
+  k1: 1.5
+  b: 0.75
+  top_k: 10

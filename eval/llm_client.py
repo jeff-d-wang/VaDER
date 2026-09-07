@@ -103,27 +103,37 @@ def groq_chat_json(prompt: str, *, model: str = DEFAULT_MODEL, api_key: str | No
     work; do not pass it for judging."""
     import time
     import httpx  # local import: only needed when actually calling the API
+
+    from common.trace import record_llm_usage, span
+
     key = require_api_key(api_key)
-    for attempt in range(max_retries + 1):
-        resp = httpx.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-                "response_format": {"type": "json_object"},
-                **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
-            },
-            timeout=timeout_s,
-        )
-        if resp.status_code == 429 and attempt < max_retries:
-            wait_s = _parse_retry_seconds(resp)
-            print(f"  [rate limited, waiting {wait_s:.1f}s, attempt {attempt + 1}/{max_retries}]",
-                  file=__import__("sys").stderr)
-            time.sleep(wait_s)
-            continue
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+    # One span per call, spanning the retry/backoff loop so its duration is the
+    # honest per-request latency. No-op when there is no active trace.
+    with span("chat") as s:
+        for attempt in range(max_retries + 1):
+            resp = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "response_format": {"type": "json_object"},
+                    **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
+                },
+                timeout=timeout_s,
+            )
+            if resp.status_code == 429 and attempt < max_retries:
+                wait_s = _parse_retry_seconds(resp)
+                print(f"  [rate limited, waiting {wait_s:.1f}s, attempt {attempt + 1}/{max_retries}]",
+                      file=__import__("sys").stderr)
+                time.sleep(wait_s)
+                continue
+            resp.raise_for_status()
+            body = resp.json()
+            usage = body.get("usage") or {}
+            record_llm_usage(s, provider="groq", model=model,
+                             input_tokens=usage.get("prompt_tokens"),
+                             output_tokens=usage.get("completion_tokens"))
+            return json.loads(body["choices"][0]["message"]["content"])
     raise RuntimeError(f"groq_chat_json: exhausted {max_retries} retries on 429")

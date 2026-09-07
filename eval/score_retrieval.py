@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 
 from common.corpus_text import spans_overlap
-from common.run_meta import config_hash, git_sha
+from common.run_meta import append_run, config_hash, git_sha
 from common.stats import wilson_ci
 from eval.compare_runs import mcnemar_exact_p
 from eval.llm_client import DEFAULT_MODEL, groq_chat_json
@@ -412,6 +412,12 @@ def main(argv: list[str] | None = None) -> int:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(payload, indent=2))
         print(f"Wrote {args.out}")
+        overall = payload["overall"]
+        run_id = append_run(
+            eval_set="retrieval", run_config=config, results_path=str(args.out),
+            metrics={f"recall@{args.report_k}": overall.get(f"recall@{args.report_k}"),
+                     "mrr": overall.get("mrr"), "n_queries": len(cases)})
+        print(f"Registered run {run_id}")
     return 0
 
 

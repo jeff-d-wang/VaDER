@@ -15,9 +15,9 @@ import unittest
 from xml.etree import ElementTree as ET
 from pathlib import Path
 
-from common.corpus_text import (extract_section_text, iter_paragraphs,
-                                iter_paragraphs_from_root, parse_root,
-                                section_titles_from_root, spans_overlap)
+from common.corpus_text import (Chunk, chunk_hits_span, extract_section_text,
+                                iter_paragraphs, iter_paragraphs_from_root,
+                                parse_root, section_titles_from_root, spans_overlap)
 
 WITH_PARAGRAPHS = """<article>
   <front><article-meta><title-group><article-title>A Title</article-title></title-group></article-meta></front>
@@ -176,5 +176,31 @@ class TestSectionTitles(unittest.TestCase):
 
     def test_absent_section_gives_empty_list(self):
         self.assertEqual(section_titles_from_root(ET.fromstring(NESTED_SECS), "nope"), [])
+
+
+class TestChunkProvenance(unittest.TestCase):
+    """A Chunk carries the source spans it was built from, and is a retrieval
+    hit if any of them overlaps the gold span. This is the phase B schema that
+    cannot be retrofitted without a re-index."""
+
+    @staticmethod
+    def _gold(start, end, pmcid="PMC1", section="body"):
+        return {"pmcid": pmcid, "section": section, "char_start": start, "char_end": end}
+
+    def test_hit_when_one_source_span_overlaps_gold(self):
+        chunk = Chunk(chunk_id="PMC1:body:0-2", pmcid="PMC1", text="para0 para1",
+                      source_spans=[{"section": "body", "char_start": 0, "char_end": 50},
+                                    {"section": "body", "char_start": 51, "char_end": 90}])
+        self.assertTrue(chunk_hits_span(chunk, self._gold(60, 80)))   # overlaps span 2
+        self.assertTrue(chunk_hits_span(chunk, self._gold(10, 20)))   # overlaps span 1
+
+    def test_miss_when_no_source_span_overlaps(self):
+        chunk = Chunk(chunk_id="PMC1:body:0", pmcid="PMC1", text="para0",
+                      source_spans=[{"section": "body", "char_start": 0, "char_end": 50}])
+        self.assertFalse(chunk_hits_span(chunk, self._gold(50, 90)))          # touches, disjoint
+        self.assertFalse(chunk_hits_span(chunk, self._gold(10, 20, section="abstract")))
+        self.assertFalse(chunk_hits_span(chunk, self._gold(10, 20, pmcid="PMC2")))
+
+
 if __name__ == "__main__":
     unittest.main()
