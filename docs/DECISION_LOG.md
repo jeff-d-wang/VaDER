@@ -1918,3 +1918,751 @@ runs. The one part with no artifact to check against is the majority-class basel
 
 Two lessons worth keeping: uncommitted work is the only work git cannot give back, and a mutation
 test needs its revert planned before the mutation, not improvised after it.
+
+---
+
+## Design decision: the n>=300 retrieval eval set, built as paired queries over sampled paragraphs
+
+**Date / module:** 2026-09-05, phase C. Logged before any code was written, per the standing rule.
+Two of the four choices below were put to the user and picked by them, marked *(user)*.
+
+- **What is being decided:** how the `retrieval` eval set (`PROJECT_PLAN.md`'s n>=300 set, the one
+  every retrieval ablation from here on gets scored against) is constructed, filtered and scored.
+  The v4 audit already fixed the shape: BEIR first (done, phase A2), then domain queries generated
+  from sampled corpus paragraphs, each paragraph its own gold span by construction, about 20
+  spot-checked by hand. This entry decides the parts that were left open.
+
+- **The sampling frame.** About 330 paragraphs, drawn seeded from articles in `corpus/manifest.csv`
+  minus the six articles in `eval/held_out/`, which are physically absent from the corpus and would
+  make an unanswerable query. Paragraphs are bucketed by section type into `abstract`, `intro`,
+  `methods`, `results`, `discussion` and `body_other` (the enclosing `<sec>` title, normalized), and
+  sampled to roughly **equal quotas per stratum, not corpus proportions**. Equal allocation is the
+  deliberate choice: proportional sampling would put most of the set in results/discussion and
+  leave methods too thin to report on its own, and per-stratum recall is exactly what phase D's
+  chunker ablation needs. The set is therefore **not** a random sample of the corpus and no row off
+  it should be read as "recall on this corpus"; it is recall on a section-balanced probe of it.
+  Paragraphs under 50 or over 600 tokens are excluded (too short to carry two anchors, too long to
+  be one retrievable unit), as are boilerplate sections (acknowledgements, funding, ethics,
+  competing interests, data availability, abbreviations).
+
+- **Gold is the paragraph's own source span**, `(pmcid, section, char_start, char_end)`, per
+  standing rule 5, counted by `common/corpus_text.py`'s single offset convention. A retrieval hit
+  is scored by `spans_overlap`, not by id equality, which is what makes this set survive phase D's
+  chunker: chunk ids change, source offsets do not.
+
+- **Specificity: anchors, verified, and the residual measured rather than filtered** *(user)*. The
+  live failure mode is a generic query ("what did this study find about breast cancer risk?") that
+  hundreds of paragraphs answer equally well, against which a single-gold judgment scores a correct
+  retrieval as a miss. The generator must therefore emit **two or more anchors**, short specific
+  strings (a variant, a gene, a cohort size, an effect size) that it copies out of the paragraph,
+  and three mechanical filters run on its output: every anchor must literally occur in the gold
+  paragraph, every anchor must occur in both queries, and there must be at least two of them. That
+  rejects hallucinated specifics and vague queries without an LLM call. **What it cannot do is prove
+  no other paragraph answers the query**, so the residual gets measured instead of asserted: an LLM
+  judges the top-5 non-gold hits on a sample of queries and the resulting hole rate is reported with
+  a CI as a standing caveat on every row scored off this set. Rejected: a per-query LLM uniqueness
+  pass (about 300 extra calls, filters harder, still leaves the residual unmeasured, so it costs
+  more and tells you less).
+
+- **Lexical bias: two query styles per paragraph, so it is a measured gap and not a caveat**
+  *(user)*. A query written while looking at a paragraph reuses its wording, which flatters BM25
+  against dense retrieval, the exact comparison M3 exists to make. One generation call returns
+  **both** a wording-reusing query and a de-lexicalized paraphrase of the same fact, giving about
+  660 queries over about 330 paragraphs, perfectly paired. Recall is then reported per style with a
+  paired McNemar on the same items, so the size of the bias is a number this project owns rather
+  than a sentence it apologizes with. **The anchors are held verbatim in both styles by
+  construction**, so the contrast measures the effect of *prose* wording only; varying the
+  identifier form (`c.1100delC` against `1100delC` against an rsID) is a different and deliberately
+  separate experiment, and it is phase D's exact-identifier failure case, not this one. Rejected: a
+  rewrite pass over the high-overlap tail, which silently changes the set's composition in a way
+  that cannot be reported honestly.
+
+- **Every row carries its own lexical overlap** with the gold span (query token types found in the
+  gold paragraph, over query token types), so the bias is visible per row and not only in aggregate,
+  which is what `START_HERE.md`'s phase C line asks for. `min_anchor_df`, the corpus document
+  frequency of the rarest anchor, was considered as a second per-row specificity field and **not
+  built**: it would make the builder load the 585MB index for a number nothing yet consumes. If the
+  hole measurement comes back bad, that is the field to add.
+
+- **What is deliberately not in this phase.** Tuning BM25's `k1`/`b` against the new set (it exists
+  to measure ablations, and tuning the baseline on it before phase D would spend the set's
+  independence on the least interesting knob); any dense or hybrid retriever (Tier 2, one at a time,
+  each with its own paired test); and the human spot-check itself, which is generated here as a
+  worksheet but is the user's to run. Until roughly 20 cases have been reviewed by a person, every
+  number off this set is provisional, on this project's own measured base rate: unreviewed
+  agent-written labels have run about 50% defective twice (4 of 8 in phase A1, 5 of 11 on the
+  strength pass).
+
+- **Reasoning:** the binding constraint the v4 audit identified is that a 3-point retrieval delta is
+  invisible at n=17 and visible at n>=300, and that no amount of care on the answer set fixes it.
+  The two user-picked choices both follow the same rule this project keeps relearning: when a bias
+  is known and cheap to measure, measure it, because a caveat costs the same to write and buys
+  nothing later.
+
+- **Reversibility:** cheap in the parts that matter. The set is regenerable from a seed and the
+  builder is deterministic given the model output, which is cached in the output file. The one
+  expensive thing to change afterwards is the anchors-held-constant rule, since it defines what the
+  lexical contrast means; changing it invalidates the paired comparison, not the set.
+
+---
+
+## Experiment: what does BM25 score on the phase C retrieval set, and how big is the lexical bias?
+
+- **Date / module:** 2026-09-05, phase C. **Written before the set was generated and before
+  anything was scored**, per the standing rule. Four predictions, each with its own MDE, because
+  the run produces four separate numbers and three of them are underpowered in different ways.
+
+- **Prediction 1, the exit number.** BM25 recall@10 on the domain set lands **high, 0.80 to 0.90**,
+  well above the 0.135 it scored on NFCorpus and above SciFact's reference too. Not because this
+  retriever is good: because the set is built to be easy for it. Queries are written while looking
+  at the paragraph, and the anchors, held verbatim across both styles, are the rarest terms in the
+  query (`c.9275A>G`, an rsID, a cohort size), which is exactly the signal BM25's IDF term is built
+  to exploit. **A high number here is a property of the set, not a claim about retrieval quality**,
+  and the entire value of the number is as the baseline every phase D and Tier 2 ablation moves
+  against.
+  - **MDE:** not applicable, this is a single-arm estimate. At n≈330 per style the Wilson interval
+    at p=0.85 is about ±4pp, which is the resolution every later paired comparison inherits.
+
+- **Prediction 2, the lexical bias.** The paired gap, lexical minus paraphrased recall@10, is
+  **small: +2 to +6pp**. The reasoning is the construction itself: anchors are identical across the
+  two styles, and anchors carry nearly all the IDF mass, so what varies between them is the
+  low-weight prose BM25 barely scores. If this comes back large, my model of what BM25 is doing on
+  this corpus is wrong and the de-lexicalization pass matters far more than the design assumed.
+  - **MDE:** roughly **4pp**, by McNemar at n≈330 pairs, assuming the two styles agree on about 85%
+    of items and so produce about 40 to 50 discordant pairs. **The predicted effect straddles the
+    MDE.** At the low end (+2pp) this run cannot distinguish the effect from noise and will be
+    inconclusive by construction. Saying so now, before the number exists, is the point of the
+    rule; the honest reading if it lands at +3pp is "too small to call", not "small effect found".
+
+- **Prediction 3, the single-gold hole rate.** **15% to 30%** of sampled queries have at least one
+  non-gold paragraph in the top 5 that also answers them. A corpus of 7,863 cancer-genomics
+  articles repeats itself: the same variant, the same cohort, the same effect size get restated
+  across papers and inside one paper's abstract and results.
+  - **MDE:** at n=40 judged queries the Wilson half-width is about **±14pp**. This estimate is good
+    for an order of magnitude and nothing finer. It is enough to answer the only question being
+    asked of it, whether the correction to recall is a couple of points or tens of points.
+
+- **Prediction 4, per section stratum.** **Methods scores lowest** on recall@10, by 10pp or more.
+  Methods paragraphs are the most formulaic text in the corpus (the same sequencing kits, the same
+  statistical software, the same consent language across thousands of articles), so a methods query
+  has the least to distinguish its own paragraph from every other one. Abstracts score highest.
+  - **MDE:** at n=55 per stratum, Wilson half-width about ±10pp, and the strata are independent
+    samples rather than paired, so only a gap of roughly 15pp or more between two strata is
+    distinguishable. The predicted 10pp gap is **below** that. Treat the per-stratum table as
+    descriptive; it is the input to phase D's chunker design, not a finding.
+
+- **Method:** `eval/build_retrieval_set.py` at seed 0, quota 55 per stratum, `openai/gpt-oss-120b`
+  on the Groq free tier, prompt `retrieval_qgen_v1`. Scored by `eval/score_retrieval.py` over
+  `retrieval/bm25.py`'s existing full-corpus paragraph index (436,834 paragraphs), top_k=100. A hit
+  is `common.corpus_text.spans_overlap` against the gold span, not an id match.
+
+- **Result, INTERIM.** The build ran out of Groq's daily token budget (200,000 TPD per model) with
+  **138 of 330 paragraphs done: abstract 55/55, intro 55/55, methods 28/55, and results,
+  discussion and body_other not started.** So these are numbers on 276 queries over half the
+  strata, not the phase C exit number. Config `cfg-50865433fd64`, rebuilt index (344,900
+  paragraphs), top_k=100.
+
+  | | recall@1 | recall@10 | recall@100 | nDCG@10 | MRR |
+  |---|---|---|---|---|---|
+  | overall (n=276) | 0.554 | **0.801** [0.754, 0.848] | 0.938 | 0.671 | 0.637 |
+  | lexical (n=138) | 0.652 | 0.870 [0.812, 0.920] | 0.971 | 0.759 | 0.728 |
+  | paraphrased (n=138) | 0.457 | 0.732 [0.652, 0.804] | 0.906 | 0.583 | 0.546 |
+
+  Paired on the same 138 paragraphs: **delta +13.8pp, discordant 21/2, McNemar exact p=0.000.**
+  Per stratum at recall@10: abstract 0.818 (n=110), intro 0.773 (n=110), methods 0.821 (n=56).
+
+- **Did the prediction hold?** **One of four held; two are wrong and one is not yet testable.**
+
+  1. **Exit number: held, at the bottom edge.** 0.801 against a predicted 0.80 to 0.90. The
+     reasoning behind it (the set is easy for BM25 by construction) survives.
+  2. **Lexical bias: wrong, and not marginally.** Predicted +2 to +6pp against an MDE of about 4pp,
+     so I had pre-registered that this might come back inconclusive. It came back **+13.8pp at
+     p=0.000**, two to seven times the predicted effect and unambiguous. My reasoning was that
+     anchors carry nearly all the IDF mass, so varying only the surrounding prose should barely
+     move a BM25 score. That is wrong in a way worth keeping: BM25 **sums** over every matching
+     term, so a paraphrase that swaps out eight or ten low-IDF content words loses eight or ten
+     small contributions, and the sum of many small terms is not small. Anchors decide *whether*
+     the right paragraph is reachable; the prose decides *where in the ranking* it lands, which is
+     visible in recall@100 barely moving (0.971 to 0.906) while recall@1 falls hard (0.652 to
+     0.457). **This is the most useful result in the run**: it says the de-lexicalization pass was
+     not cosmetic, and a set built only from wording-reusing queries would have overstated BM25 by
+     about 14 points against any semantic retriever it is later compared with.
+  3. **Hole rate: not measured.** The daily token budget was gone before `--measure-holes` could
+     run. Every recall number above therefore still lacks its lower-bound correction.
+  4. **Methods lowest: wrong so far, on half the strata.** Methods is 0.821, statistically
+     indistinguishable from abstract's 0.818 and slightly above intro's 0.773. I had predicted
+     methods would trail by 10pp or more because methods prose is formulaic across thousands of
+     articles. The anchor requirement is the likely reason it does not: a methods query anchored
+     on a specific kit, cohort size or software version is highly discriminative precisely
+     *because* the surrounding boilerplate is shared. This one is provisional; results, discussion
+     and body_other are all still missing, and the MDE analysis said only a 15pp gap would be
+     distinguishable anyway.
+
+- **What changed because of this:**
+  - The two-style construction is **validated as load-bearing rather than decorative** and stays.
+    A retrieval set for this corpus built from wording-reusing queries alone is worth about +14
+    points of illusory BM25 recall.
+  - The `--calibrate-overlap` reference makes the same point from the other side: our paraphrased
+    queries average **0.588** lexical overlap with their gold paragraph against SciFact's
+    human-written claims at **0.529** and NFCorpus's at **0.261**, while our lexical style sits at
+    **0.763**. De-lexicalization moves this set to roughly SciFact's genre; it does not reach
+    NFCorpus's, and no row off it should claim otherwise.
+  - **The set is not finished and no exit number is claimed.** What it needs is budget, not code:
+    about 192 more paragraphs at roughly 1,400 tokens per attempt, which is two more days of the
+    200k-per-model daily cap. Three of six strata are empty, so the per-stratum table above is
+    half a table.
+
+---
+
+## Experiment: the BM25 index was a cache of sentence fragments, and every consumer agreed with it
+
+- **Date / module:** 2026-09-05, found while dry-running phase C's scorer. **Not a planned
+  experiment**, so there is no prior prediction to hold it to; logged as a finding because it
+  changes how an existing `RESULTS.md` row should be read.
+
+- **How it surfaced.** Phase C's scorer checks that each gold span exists in the index it is about
+  to score against. Two of the first 44 rows came back absent, with the index holding
+  `abstract [1:355]` where the gold span said `abstract [0:355]`. A one-character disagreement is
+  not a rounding difference, so the index got rebuilt from current code and diffed.
+
+- **What it was.** The old index held **436,834 records; the rebuilt one holds 344,900**. On the
+  worst article the old index had **2,273 records where the current convention reads 186
+  paragraphs**, and the extra ones are sentence fragments: `'is an innovative framework for
+  discovering'`, `'(PARPi) in oncology patients with BRCA mutations.'`
+
+- **The cause, from the source rather than inferred.** The pre-unification
+  `retrieval/bm25.iter_paragraphs` called `extract_section_text` (which **joins** paragraphs on
+  `"\n"`) and then recovered the paragraphs by **splitting that string back on `"\n"`**. A
+  join/split round trip is lossless only if no element contains the separator, and JATS line-wraps
+  inside `<p>`, so `"".join(p.itertext())` keeps those newlines. Every internal line break became a
+  paragraph boundary.
+
+- **Why nothing caught it, which is the part worth keeping.** The fragments' offsets were
+  **correct**. Each one satisfies this project's stated invariant,
+  `extract_section_text(...)[char_start:char_end] == the span text`, so `verify_spans.py` passed,
+  the offset test added by the 2026-09-05 audit passes on fragments too, and a retrieved fragment
+  overlaps its containing paragraph, so even phase C's span-overlap scoring produced entirely
+  plausible recall numbers off the wrong index. **The invariant constrains offsets, not
+  granularity.** Nothing in the repo asserted what a retrievable unit is.
+  The second reason is timing: the audit that unified the paragraph convention landed at
+  2026-09-05 15:53 (`a3af978`, `ab6b9b7`) and fixed every producer and consumer **in code**. The
+  index is a pickle, a cached artifact, built at 01:48 that morning and never rebuilt. An audit of
+  code does not reach a cache.
+
+- **Result, and what it costs.** The rebuilt index is now `eval/runs/bm25_index.pkl`; the old one
+  is kept as `eval/runs/bm25_index.PRE_UNIFICATION.pkl` (both git-ignored). `score_retrieval.py`
+  now refuses to report a number when any gold span is missing from the index, with the rebuild
+  instruction, so staleness fails loudly instead of scoring plausibly.
+  **`RESULTS.md`'s `baseline/bm25_only` rows were produced against the fragment index**, confirmed
+  by timestamp: the index was written 2026-09-05 01:48 and `bm25_only_answers.jsonl.meta.json`
+  records the run at 01:52 the same morning, about fourteen hours before the unification commit.
+  That baseline therefore fed its model the top 8 *fragments*, averaging a sentence each, not the
+  top 8 paragraphs. Those rows are not withdrawn, they measure what really ran, but the label
+  "BM25-only" claims more context than the run had.
+
+- **What changed because of this:** phase C is scored against the rebuilt index only. **The
+  answer-set BM25 baseline needs re-running**, and that re-run is an experiment with a real
+  prediction attached (more context per excerpt should raise groundedness, and the +75pp retrieval
+  lift is the number most at risk of moving), so it gets its own logged prediction first rather
+  than being folded in here. It is cheap, about 11 calls. Flagged, not done, deliberately: it is
+  phase A's number, and re-running it silently inside phase C is how a headline finding moves
+  without anyone noticing.
+
+---
+
+## Design decision: the free tier's real constraint is 200k tokens per day, and it sets the pace of every generated eval set
+
+**Date:** 2026-09-05, phase C. Logged after the fact because it is a measurement of the
+environment rather than a design choice, and it was not knowable before running into it.
+
+- **What was found.** Groq's free tier on `openai/gpt-oss-120b` enforces three limits, and the
+  binding one is not the one this project had written down. The 429 body names it:
+  **tokens per day, 200,000**, alongside 8,000 tokens per minute and 1,000 requests per day. Only
+  the per-minute cap appears in `llm_client.py`'s docstring, and only that one is recoverable by
+  waiting: a TPD 429 arrives with `x-should-retry: false` and a `retry-after` of several hundred
+  seconds that will not help, because the budget resets on a daily boundary, not in six minutes.
+  The per-minute headers actively mislead here: `x-ratelimit-remaining-tokens` read a healthy
+  7,923 while every request was being refused.
+
+- **What it costs in practice.** Phase C's query generation is about 1,400 tokens per paragraph
+  (a 350-token instruction, the paragraph itself, and roughly 250 tokens out), so **200k per day
+  buys about 140 paragraphs**, and a 330-paragraph set is a three-day job on the free tier. The
+  build got 138 of 330 done before stopping.
+
+- **The one code change worth making, already made.** `reasoning_effort="low"` on
+  `groq_chat_json`, passed by bulk mechanical callers and by nothing that judges. Measured on this
+  prompt: 1,402 tokens per call at the default against 799 at low, because the default spends 730
+  tokens reasoning about a task that is copying two anchors and writing two sentences. That is a
+  **1.75x** increase in paragraphs per day for free. Omitted from the request entirely when not
+  passed, so every previously logged run reproduces byte-identically.
+
+- **What was NOT done, and why.** Switching models mid-build to borrow another model's daily
+  budget. The strata are generated in order, so a model change lands exactly on a stratum
+  boundary and **confounds model with section type**: every later per-stratum comparison would be
+  uninterpretable, which is the one thing this set exists to support. Restarting the whole set on
+  a larger-budget model stays available and costs the 138 paragraphs already built.
+
+- **What this changes for planning.** Any future generated eval set needs its token budget
+  estimated before it is scheduled, not after. The arithmetic is one line: paragraphs per day
+  equals 200,000 divided by tokens per call. This also raises the first real case for the small
+  reserved paid budget `START_HERE.md` rule 9 allows: a paid tier would finish this set in a
+  single run for a few dollars, against three days of waiting. That call is the user's.
+
+---
+
+## Experiment: is the lexical style gap actually the style, or is it the overlap underneath it?
+
+- **Date / module:** 2026-09-06, phase C. A follow-up on the previous entry's one strong result,
+  run before spending any more generation budget, because if the +13.8pp gap were an artifact then
+  the two-style construction is costing half the set's queries for nothing.
+- **Prediction (logged before running):** the gap survives the obvious confounds, and **overlap
+  mediates it**: once lexical overlap is held roughly fixed, the style label should add little. If
+  instead the style label still predicts a hit at constant overlap, then "paraphrased" is carrying
+  something my overlap measure does not capture and the per-row overlap number is the wrong
+  instrument.
+- **Minimum detectable effect:** within-band comparisons land at n between 23 and 94 per cell, so
+  the Wilson half-widths run 5 to 12pp. **Only a residual style effect of roughly 15pp or more
+  would be distinguishable**, which means this test can rule out a large residual and cannot rule
+  out a small one. Registered before looking.
+
+- **Method:** four checks on the same 138 paragraphs, no new generation. Query length by style;
+  recall@10 against overlap band, pooling styles; the style split inside fixed overlap bands; the
+  gap per stratum and at every k.
+
+- **Result.**
+
+  **The obvious confound is ruled out, and it points the wrong way for me.** Paraphrased queries
+  are slightly **longer** than lexical ones (mean 18.1 against 17.4 tokens, longer on 72 of 138
+  pairs, shorter on 47). More query terms means more chances to match, so if length mattered it
+  gave the paraphrased style a small advantage. It lost by 13.8pp anyway, so the measured gap is
+  if anything **conservative**.
+
+  **Recall rises monotonically with overlap, pooling both styles**, a clean dose-response across a
+  45-point range:
+
+  | overlap band | recall@10 | 95% CI | n |
+  |---|---|---|---|
+  | [0.00, 0.50) | 0.429 | [0.265, 0.609] | 28 |
+  | [0.50, 0.65) | 0.767 | [0.669, 0.842] | 90 |
+  | [0.65, 0.80) | 0.873 | [0.794, 0.924] | 102 |
+  | [0.80, 0.90) | 0.913 | [0.797, 0.966] | 46 |
+  | [0.90, 1.01) | 0.900 | [0.596, 0.982] | 10 |
+
+  **Inside a fixed overlap band the style label nearly vanishes:** at overlap [0.5, 0.7), lexical
+  0.848 (n=33) against paraphrased 0.784 (n=88); at [0.7, 0.9), lexical 0.883 (n=94) against
+  paraphrased 0.870 (n=23). A 6pp and a 1pp difference, both well inside their intervals, against
+  13.8pp unconditioned.
+
+  **The gap is in every stratum and at every k**, largest where it should be. Per stratum:
+  methods +21.4pp (p=0.031), intro +16.4pp (p=0.012), abstract +7.3pp (p=0.219, not significant).
+  By cutoff: +19.6pp at k=1, +21.0 at 5, +13.8 at 10, +10.1 at 20, +7.2 at 50, +6.5 at 100.
+
+- **Did the prediction hold?** **Yes, on the part that was testable.** Overlap mediates the style
+  effect: the dose-response is monotone and the within-band residual is 1 to 6pp, comfortably
+  below the 15pp this test could have distinguished. Stated honestly, that **rules out a large
+  residual style effect and cannot rule out a small one**, exactly as pre-registered. The bands
+  are also wide and the two styles are unevenly represented inside each one by construction (a
+  paraphrase rarely reaches 0.9 overlap), so this is mediation evidence, not a controlled
+  experiment.
+
+- **What changed because of this:**
+  1. **How the headline result should be stated.** Not "paraphrasing costs BM25 14 points," which
+     invites the reading that paraphrase is a mysterious property. It is: **recall tracks how many
+     query tokens survive into the gold paragraph**, and the two styles are a controlled way of
+     moving that. The transferable claim is about overlap, and it applies to any query, including
+     the real user queries phase E will serve.
+  2. **Later ablations should condition on `lexical_overlap`, not on `style`.** The per-row field
+     turns out to be the instrument; the style label is a coarse proxy for it. `score_retrieval.py`
+     now prints the overlap dose-response with the per-style split inside each band on every run,
+     so nobody has to rediscover this.
+  3. **The methods result from the previous entry is revised.** Methods has the *highest* pooled
+     recall (0.821) and the *largest* wording sensitivity (+21.4pp). Those fit together: an anchor
+     in a formulaic methods paragraph is highly discriminative precisely because the surrounding
+     boilerplate is shared, and by the same token the boilerplate wording is doing more of the
+     ranking work, so changing it costs more. My original prediction (methods worst) was wrong
+     about the level and had not considered the slope at all.
+  4. **`score_retrieval.py` now persists per-query `rank_of_gold`**, because this analysis needed
+     nine minutes of re-retrieval to ask a different question of rankings the previous run had
+     already computed and thrown away. Every hit@k, the paired test and any later slice are
+     derivable from that one number.
+
+---
+
+## Design decision: BM25 search is a full scan, and that is now on phase E's critical path
+
+**Date:** 2026-09-06, phase C. Logged as a finding plus a deferred decision, not a change: nothing
+was rewritten, and the reason for not rewriting it is part of the decision.
+
+- **What was measured.** Scoring 276 queries takes 9 to 11 minutes, about **2.4 seconds per
+  query**, and the process holds **1.7 GB resident**. `BM25Index.search` scores *every* one of the
+  344,900 paragraphs for every query, and the whole index (a `Counter` per paragraph) must be
+  resident to do it. On this 8 GB machine that is enough to matter: with two scoring runs
+  overlapping, the system went to 14.9 GB of swap with 63 MB of free RAM and throughput fell from
+  0.7 queries per second to **0.04**, a 17x collapse. The numbers were unaffected (verified: two
+  runs agree exactly) but the wall clock was not.
+
+- **Why it matters beyond convenience.** `TASK_CONTRACT.md`'s targets are **6s p95 and 1.5s TTFT**
+  for the whole request. BM25 alone currently costs 2.4s, so **retrieval by itself already exceeds
+  the entire time-to-first-token budget** before a single generation token is produced. Phase E
+  cannot meet its contract with this implementation, and that is a fact about the design rather
+  than about the hardware: a full scan is linear in corpus size, and Tier 3 (M11) plans to grow the
+  corpus by an order of magnitude.
+
+- **The fix is standard and small.** A postings list, `term -> [(paragraph_index, term_frequency)]`,
+  which is how BM25 is always implemented: score only the paragraphs that contain a query term
+  rather than all of them, accumulating into a dict. It *replaces* the per-paragraph `Counter`
+  list rather than adding to it, so it cuts memory as well as time, and it changes no score,
+  because a paragraph containing none of the query terms scores 0 and is already discarded.
+
+- **Not done now, deliberately.** `retrieval/bm25.py` produced every retrieval number this project
+  has logged, so rewriting its scoring loop is exactly the kind of change that should not be made
+  while attention is on something else. It needs its own session with two specific gates: a test
+  asserting postings-based search returns the identical ranking to the current full scan on a
+  random index, and a SciFact re-run reproducing the four-decimal figures in `RESULTS.md`
+  (nDCG@10 0.5979, recall@100 0.8246). Both are cheap; neither should be skipped.
+
+- **Where it belongs.** Phase D or E, before the load test, not in Tier 2. It is not a "latency and
+  cost" optimisation in M10's sense, which is about tuning a system that meets its contract. This
+  is the difference between meeting the contract and not.
+
+- **Reversibility:** free. The index is git-ignored and rebuilt in 35 seconds, and the change is
+  internal to one class.
+
+---
+
+## Experiment: the retrieval set is 55% defective, and what the defects were
+
+- **Date / module:** 2026-09-06, phase C. The human spot-check `PROJECT_PLAN.md` asks for, run on
+  20 of the 138 paragraphs before any more generation budget was spent. **This is the third
+  measurement of this project's roughly 50% base rate for unreviewed agent-written labels**
+  (phase A1: 4 of 8; the strength pass: 5 of 11; here: 11 of 20).
+
+- **Result: 11 of 20 wrong, 45% valid, 95% CI [34%, 74%] on the error rate.** Two systematic
+  causes, and both trace to one design decision I logged the day before.
+
+  **1. Tautological queries, 6 of 11.** The rule "anchors appear verbatim in both queries" is
+  sound only if anchors are *identifiers*. The generator frequently chose the *finding* instead,
+  and the rule then carried the answer into the question: "How many amplicons were designed to
+  cover the 159 kb target region, specifically 1663 amplicons?" Also "(64% of TNBC)", "with
+  estimates of 8-14%", "(0.1%)". The contrast with the valid cases is clean: those anchor on
+  `BRCA1 5382insC`, `C-CAT`, `cancereffectsizeR`, `exon 6 c.449G>A`, things that say what the
+  question is *about*.
+
+  **2. The paragraph does not answer the query, 5 of 11.** The query asked about the topic a
+  paragraph announces rather than anything it states. One paragraph says a systematic analysis
+  "has been lacking" and produced "What is the role of RiboSis in cancer according to recent
+  pan-cancer analyses?" Another says PARPi show "promising results" and produced "What clinical
+  benefit do PARPi provide?"
+
+- **What survives, tested rather than assumed.** A mechanical tautology proxy (query asks for a
+  quantity AND an anchor supplies one) was validated against the 20 human verdicts first:
+  **precision 1.00, catching 6 of the 11**. Applied to all 138 paragraphs it flags 43 (31%).
+  Re-scoring by subset, using the per-query gold ranks the last run persisted, so no retrieval
+  re-run was needed:
+
+  | subset | lexical | paraphrased | delta | McNemar p | pairs |
+  |---|---|---|---|---|---|
+  | all 138 | 0.870 | 0.732 | +13.8pp | 0.000 | 138 |
+  | clean (flagged removed) | 0.895 | 0.737 | **+15.8pp** | 0.000 | 95 |
+  | flagged tautological | 0.814 | 0.721 | +9.3pp | 0.219 | 43 |
+  | human-marked `wrong` | 1.000 | 1.000 | +0.0pp | 1.000 | 11 |
+
+  **The defects were diluting the lexical finding, not producing it.** A query containing its own
+  answer is found by everyone: the 11 human-wrong paragraphs score 1.000 in *both* styles with a
+  zero gap. Removing the flagged ones moves the effect from +13.8pp to **+15.8pp**. So the one
+  strong result from phase C stands, and stands more firmly. **`recall@10` = 0.801 does not**: it
+  is a rate over a set that is roughly half defective and is withdrawn.
+
+- **The fix attempt, and its honest outcome. Three trials on the same 20 paragraphs, 1, 3 and 3
+  accepted of 20. `retrieval_qgen_v2` is not shippable.** What was tried, in order:
+  1. Require a verbatim `answer_quote` and reject when the query already contains most of it.
+     The tautology and grounding filters themselves work (unit-tested against all four defect
+     shapes, and a first version was caught over-firing because a whole-sentence quote shares
+     most of its tokens with a perfectly good question, so the prompt now demands the shortest
+     answering span). **1 of 20 accepted.**
+  2. Report declination honestly (the model returns an empty object when it judges a paragraph
+     stateless, which the anchor check was mislabelling as malformed output) and allow a stated
+     method, definition or mechanism to count as a finding. **3 of 20.**
+  3. Stop treating the model's anchor list as a contract: prune anchors that are absent, too long
+     or missing from a query, and reject only on a shortfall of survivors. This fixed the largest
+     single rejection reason in trial 2 (7 of 20 were "query drops anchor"). It also fixed a real
+     bug, an anchor carrying U+2011 where the paragraph had U+002D, now folded in `normalize`.
+     **Still 3 of 20**, with the model now proposing a single anchor where the prompt asks for
+     two to four.
+
+- **The structural diagnosis, which is why I stopped rather than run a fourth trial.** Every
+  constraint fights the same one: **"anchors appear verbatim in both queries" is my invention, and
+  it is the common root of both the defect and the collapse.** It is what carried the answer into
+  the question in v1, and it is what the model cannot satisfy alongside the v2 rules. It existed
+  for one reason, to make the paired style contrast interpretable by holding the high-IDF terms
+  constant. **The mediation experiment run earlier the same day has already made that reason
+  obsolete**: recall is driven by `lexical_overlap`, measured per row whatever the queries look
+  like, and inside a fixed overlap band the style label adds 1 to 6pp instead of 13.8. The pairing
+  that matters is on the gold paragraph, which is unaffected. Holding anchors constant is now
+  paying a large cost for a property nothing uses.
+
+- **What changed because of this:** the interim `RESULTS.md` rows carry a superseding caveat;
+  `recall@10` is withdrawn; the lexical-bias rows stand with the subset table above. The builder's
+  filters are improved and tested but the generator is **not usable at a 15% accept rate**, which
+  is 6x the budget per paragraph. The next move is a design decision with a real trade-off, so it
+  goes to the user rather than into another prompt iteration.
+
+---
+
+## Experiment: relax the anchor rule (A), or add a second-pass judge (B)?
+
+- **Date / module:** 2026-09-06, phase C. **Logged before running**, per the standing rule.
+
+- **The question.** `retrieval_qgen_v2` accepts 3 of 20 paragraphs, which is unusable. Two candidate
+  fixes were put to the user, who asked for them to be compared rather than chosen on argument.
+  **A: relax the anchor rule** so each query must contain at least one anchor rather than all of
+  them verbatim. **B: split generation from checking**, keeping a light generation prompt and
+  adding a second LLM call that judges the result.
+
+- **Design, and why it is paired.** B is implemented as **A plus a judge**, so both arms score the
+  same 20 paragraphs from the *same* generation calls: 20 generations, then a judge call on each
+  item A accepts. That makes B a subset of A by construction, halves the cost, and isolates
+  exactly what the judge contributes rather than confounding it with prompt differences. The 20
+  paragraphs are the ones a human has already read, so their known defects are the reference.
+
+- **Prediction.**
+  1. **Arm A restores acceptance to 50-70%.** v1 accepted about 65% and v2 collapsed to 15% after
+     three constraints were stacked on. If the anchor rule really is the binding constraint, as the
+     rejection histograms say, relaxing it should recover most of that.
+  2. **The judge rejects 20-40% of what A accepts**, concentrated on failure mode 2 (the paragraph
+     does not answer the query), because that is a semantic property no mechanical rule can see.
+     It should catch very little tautology, since the mechanical filter already handles that.
+  3. **I cannot measure the defect rate of either arm's output**, only acceptance and the
+     mechanical flags. Judging the new queries is a human's job and it goes back to the user.
+
+- **Minimum detectable effect: about ±21pp** (Wilson half-width at n=20, p=0.5). **This run can
+  distinguish "works" from "collapses" and nothing finer.** It cannot rank A against B on quality,
+  and any acceptance-rate difference under about 20 points should be read as noise.
+
+- **Decision rule, fixed before seeing any output**, so the result cannot be reinterpreted to suit
+  a preference:
+  - A >= 50% accepted and the judge rejects <= 20% of them: **take A alone.** The judge is not
+    earning its cost and no paid tier is needed.
+  - A >= 50% and the judge rejects > 20%: **the judge is doing real work.** B is worth 2x the calls,
+    which is the case where a paid tier pays for itself.
+  - A < 50%: **the anchor rule was not the binding constraint** and both fixes are wrong. Stop and
+    rethink rather than pick the less bad one.
+
+- **Result. Both arms failed the pre-registered bar, and the decision rule fired correctly.**
+  19 usable generations (one call timed out).
+
+  | arm | rule | accepted | judge rejected |
+  |---|---|---|---|
+  | A | one anchor per query | 5/20 = **25%** | 0 of 5 = 0% |
+  | B | A plus an LLM judge | 5/20 = **25%** | (same 5) |
+
+  A came in at 25% against a predicted 50-70%, well under the 50% floor, so by the rule written
+  before the run: **the anchor rule was not merely too strict, and both candidate fixes were
+  wrong.** The judge result is **uninformative, not negative**: it saw 5 items, where the MDE is
+  enormous. Nothing here says a judge is useless, only that this run could not measure it.
+
+  **Prediction 1 wrong** (25%, not 50-70%). **Prediction 2 wrong** (judge rejected 0%, not
+  20-40%, on a sample far too small to have detected 20-40% anyway). Prediction 3 held: quality
+  remains unmeasurable without a human.
+
+- **What the rejection histogram said, which is the real finding.** Of 15 arm-A rejections, **8
+  were "query contains none of the anchors"**, under a rule that only asked for *one* anchor per
+  query. The model was not failing to comply with a strict rule; it was not echoing anchors
+  verbatim at all. Meanwhile the answer-quote machinery worked: only 1 rejection was a bad quote,
+  and 3 were legitimate declinations on paragraphs that state nothing.
+
+- **Arm A-prime, scored offline at zero cost on the SAME generations.** Because both arms shared
+  one set of generation calls, a third rule could be tested for free: keep `answer_quote` and the
+  tautology check, drop the anchor requirement entirely. **14 of 19 accepted, 74%**, better than
+  v1's own rate, with the four remaining rejections all legitimate (3 declinations, 1 non-verbatim
+  quote, 1 sentence-length quote).
+
+  The recovered items are the decisive evidence. They are not marginal passes; they are the exact
+  paragraphs whose v1 output the human marked **wrong**, now correctly formed:
+
+  | v1, marked wrong by a human | v3, recovered by A-prime |
+  |---|---|
+  | "How many **eight CLL patients** had clonally unrelated RS?" | "How many CLL patients had paired CLL and RS tumour samples?" answer `eight CLL patients` |
+  | "How many amplicons... **specifically 1663 amplicons**?" | "How many amplicons were designed to cover the target region?" answer `1663 amplicons` |
+  | "What is the number of **359 breast cancer patients** accrued at..." | "How many breast cancer patients were accrued at the National Cancer Center Singapore?" answer `359` |
+
+  **So the anchor-echo rule cost two thirds of the yield and bought no quality.** What buys quality
+  is the answer quote plus the tautology check. This is the same rule, in its third form, being
+  wrong for the third time: strict (v1, 55% defective), relaxed (arm A, 25% yield), gone (74% yield,
+  defects fixed).
+
+- **Did the prediction hold?** No, and usefully so. I predicted the rule was too *strict*. It was
+  not strictness, it was the mechanism: asking a model to echo verbatim strings into free-form
+  prose is a compliance requirement, and compliance requirements degrade as a prompt accumulates
+  other constraints. The pre-registered "A < 50% means stop and rethink" is what stopped a fourth
+  round of tuning and redirected the effort to a rule that could be tested for free.
+
+- **What changed because of this:**
+  - `retrieval_qgen_v3` is the default: anchors are metadata, pruned to those genuinely in the
+    paragraph, and nothing checks them against the queries. The gate is the answer quote and the
+    tautology share.
+  - **Specificity is now measured rather than enforced.** An unanchored, generic query would pass
+    the filters. That is not a regression to ignore: it moves the guarantee onto
+    `score_retrieval.py --measure-holes`, which is where the 2026-09-05 design decision always
+    intended to quantify it. Until that has been run, specificity is unquantified for this set.
+  - **A paid tier is not warranted, and this is the clearest result of the day.** The bottleneck
+    was never tokens. It was a rule I invented, and removing it tripled the yield for free. At 74%
+    acceptance the remaining work fits comfortably in the free tier's daily budget. Money should be
+    reconsidered only if a human review of v3 output shows the defect rate is still high, which is
+    a quality question a bigger budget does not answer either.
+  - **Not verified: v3's defect rate.** 74% is a yield number. Whether those 14 items are *correct*
+    needs the same worksheet pass that caught v1, on a fresh batch. Nothing here should be read as
+    "the defect problem is fixed", only as "the two known defect shapes are now mechanically
+    rejected, and the yield cost of doing so is gone."
+
+---
+
+## Experiment: does a generic query score well, and what replaced anchors as the specificity check
+
+- **Date / module:** 2026-09-06, phase C. Prompted by the user asking, after the anchor rule was
+  removed, whether a generic query still produces an acceptable retrieval score. Analysis only, no
+  API cost: the previous run persisted `rank_of_gold` per query, so nothing had to be re-retrieved.
+
+- **Prediction (before running):** generic queries score **worse**, not better. Recall@10 asks
+  whether one specific paragraph is in the top ten of 344,900, and BM25 does that by leaning on
+  rare terms. A query with no rare term cannot discriminate, so the gold paragraph competes with
+  hundreds of equally-matching ones and often misses.
+
+- **Method:** genericness measured as the corpus document frequency of the query's rarest term,
+  read from the BM25 index. Recall@10 bucketed by that, over all 276 queries.
+
+- **Result. Confirmed, and the spread is large.**
+
+  | rarest term appears in | recall@10 | 95% CI | n |
+  |---|---|---|---|
+  | under 10 paragraphs | **0.972** | [0.858, 0.995] | 36 |
+  | 10-100 | 0.860 | [0.772, 0.918] | 86 |
+  | 100-1000 | 0.802 | [0.716, 0.867] | 106 |
+  | 1000-10000 | **0.562** | [0.423, 0.693] | 48 |
+
+  Hits have a rarest term in a median of **108** paragraphs; misses, **739**. The mechanism is
+  visible in the worst cases: "Which frequent lung cancer mutations include TP53 and KRAS?" puts
+  the gold paragraph at rank 19. Retrieval did nothing wrong. Thousands of paragraphs discuss TP53
+  in lung cancer and it returned ten of them; the set simply declared one of them the only correct
+  answer.
+
+- **Did the prediction hold?** Yes, and it corrects the caveat written an hour earlier. Removing
+  the anchor rule was described as leaving specificity "unenforced", with the implied risk that
+  generic queries would inflate the numbers. **They deflate them.** Two consequences:
+  1. `recall@10` on this set is **depressed** by its generic queries, not flattered.
+  2. More seriously, the 55 misses are **contaminated**: an unknown share are the retriever
+     returning good answers that were not the one paragraph we labelled. That is the single-gold
+     hole problem, and it means the miss column cannot be read as retrieval failure.
+
+  This is the tautology defect running in the opposite direction. Tautological queries were
+  trivially easy (recall 1.000); generic ones are impossibly hard (0.562). Both are the eval set
+  misdescribing the retriever.
+
+- **What changed because of this: specificity is enforced mechanically again, and better.**
+  `rarest_term_df` plus `MAX_RAREST_TERM_DF = 1000` rejects a query whose rarest term is commoner
+  than 0.3% of the corpus. This is what anchors were trying to do and could not: anchors required
+  the *model* to copy distinctive strings into its queries, and it would not comply
+  (8 of 15 rejections in the A/B run). Asking the *corpus* how distinctive a query is needs no
+  compliance from anyone.
+
+  Three things stated so they cannot be quietly forgotten:
+  - **The threshold is set on eval-validity grounds, not tuned.** 1,000 of 344,900 paragraphs is
+    0.3%; a query commoner than that has at least a thousand equally-matching candidates and cannot
+    identify one gold paragraph even in principle. It was not chosen to maximise recall.
+  - **Filtering these out RAISES measured recall.** That is a change in what is being measured, not
+    an improvement in retrieval, and both numbers belong in any write-up that applies it.
+  - **A design bug was found and fixed while writing the test for it.** The first version treated a
+    term absent from the corpus as maximally rare. It is the opposite: a term matching no paragraph
+    cannot help find the gold paragraph either, so it must be ignored, or every misspelling would
+    wave a generic query through as maximally specific. Re-running the analysis after the fix gave
+    identical numbers, because every term in this set does appear in the corpus, but the bug would
+    have fired on the first paraphrase that invented a word.
+
+---
+
+## Experiment: does k1=1.2 beat k1=1.5, and was 1.5 ever justified?
+
+- **Date / module:** 2026-09-06, phase C. **Logged before running.** Prompted by the user asking
+  whether the standard Okapi configuration (k1=1.2, b=0.75) had been tried. It had not, in ten
+  months of this project quoting BM25 numbers.
+
+- **What was wrong before the experiment even ran.** `retrieval/bm25.py` justified k1=1.5 as "the
+  standard textbook defaults (Robertson & Zaragoza 2009)". That is too strong. R&Z give k1 as a
+  **range**, usually 1.2 to 2.0; the widely deployed single default, in Lucene and Elasticsearch,
+  is **k1=1.2**. So the constant this project has used for every retrieval number was defensible
+  but not "the standard", and the docstring overstated it. Corrected regardless of the outcome
+  below. b=0.75 was never in question; it is the standard value and is what we already use.
+
+- **Where it is run, and why not on our own set.** On **SciFact and NFCorpus**, not the domain
+  retrieval set. Two reasons, both binding. The domain set is currently about 55% defective, so
+  tuning against it would fit a parameter to broken labels. And `DECISION_LOG.md`'s v4 audit
+  deliberately deferred k1/b tuning so the domain set's independence is not spent on the least
+  interesting knob before phase D uses it for the chunker ablation. BEIR gives published
+  references, labels this project did not write, and costs nothing.
+
+- **Design: paired.** Same queries, same index, only k1 changes. k1 and b are scoring-time
+  parameters, so one index serves both arms and the per-query differences are exactly comparable.
+  Reported as a paired bootstrap over per-query nDCG@10 and recall@10 differences, not as two
+  marginal intervals, per `RESULTS.md`'s standing rule.
+
+- **Prediction:** **k1=1.2 is very slightly better or indistinguishable.** k1 controls how fast
+  repeated-term contribution saturates, and a lower value saturates sooner, which suits short
+  documents. Both corpora here are short (abstracts), as are this project's paragraphs (avg 92
+  tokens). I expect an nDCG@10 change of **under 1 point** in favour of 1.2, and would be
+  surprised by more than 2.
+
+- **Minimum detectable effect:** the paired bootstrap over 300 (SciFact) and 323 (NFCorpus)
+  queries should resolve differences of roughly **0.5 to 1.0 nDCG points**. My predicted effect
+  sits right at that boundary, so **an inconclusive result is a likely and acceptable outcome**,
+  and if the interval spans zero the honest reading is "no detectable difference", not "1.2 is
+  better".
+
+- **What would change the default:** only a paired interval excluding zero. A point estimate
+  favouring 1.2 with an interval spanning zero leaves k1=1.5 in place, with the docstring fixed.
+
+- **Result: no detectable difference on either benchmark, and the two disagree in sign.**
+
+  | dataset | k1=1.2 nDCG@10 | k1=1.5 nDCG@10 | paired delta (1.2 minus 1.5) | verdict |
+  |---|---|---|---|---|
+  | SciFact (n=300) | 0.5999 | 0.5979 | **+0.0020 [-0.0050, +0.0090]** | no detectable difference |
+  | NFCorpus (n=323) | 0.2857 | 0.2880 | **-0.0023 [-0.0057, +0.0005]** | no detectable difference |
+
+  Paired recall@10 likewise: SciFact +0.0050 [-0.0067, +0.0167], NFCorpus +0.0002
+  [-0.0010, +0.0015]. Both point estimates are two thousandths, both intervals straddle zero, and
+  the sign flips between datasets, which is what noise looks like.
+
+  **The more interesting number is how little moved at all.** Changing k1 altered nDCG@10 for only
+  **25 of 300** SciFact queries and 61 of 323 NFCorpus queries, and altered recall@10 for **4 of
+  300** and 15 of 323. Most rankings were bit-identical.
+
+- **Did the prediction hold?** **Yes, including the part predicting inconclusiveness.** I predicted
+  under 1 nDCG point in favour of 1.2 against an MDE of 0.5 to 1.0 points, and flagged in advance
+  that an inconclusive result was the likely outcome. It measured 0.2 points, in different
+  directions on the two datasets. The pre-registered reading applies: this is **"no detectable
+  difference"**, not "1.2 is slightly better".
+
+  **Why so inert, which is the transferable part.** k1 controls how quickly a repeated term stops
+  adding to the score. Its effect is proportional to how often terms repeat within a document.
+  These are abstracts, and this project's own units are paragraphs averaging 92 tokens, where
+  almost every term appears once or twice. With term frequencies that low the saturation curve is
+  nearly linear over the whole range and k1 has almost nothing to bite on. **k1 is not a useful
+  knob for short-document retrieval**, and effort that might have gone into tuning it should go to
+  `b` (length normalisation, which matters because this corpus mixes 1,500-character abstracts with
+  short body paragraphs), stemming, or stopword handling.
+
+- **What changed because of this:**
+  - **k1 stays at 1.5**, by the rule fixed before the run: only a paired interval excluding zero
+    moves the default. Switching to 1.2 on a two-thousandths point estimate would be reading noise,
+    and it would break comparability with every number this project has already logged for no
+    measured gain.
+  - **The docstring was wrong and is fixed.** Calling k1=1.5 "the standard textbook default"
+    overstated it; R&Z give 1.2 to 2.0 as a range and Lucene's single default is 1.2. The honest
+    statement is now that 1.5 sits inside the accepted range and that 1.2 was tested against it and
+    found indistinguishable.
+  - **"Why k1=1.5?" now has a measured answer** rather than an appeal to a textbook, which is worth
+    more than the parameter change would have been.
+  - `k1` and `b` are now scoring-time parameters on `search()`, so any future sweep reuses one
+    index instead of rebuilding. Four tests cover the pass-through and the saturation behaviour.
+  - **Still not done: tuning `b`, and tuning anything on the domain set.** Both remain deliberately
+    deferred, `b` because the domain set is currently ~55% defective and the v4 audit reserved that
+    set's independence for phase D's chunker ablation.

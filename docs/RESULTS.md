@@ -45,6 +45,26 @@ just the two marginal rates.
 > The `retrieval`-set rows (SciFact, NFCorpus) are **unaffected**: those labels come from BEIR, not
 > from this project.
 
+> ### Standing caveat on every `baseline/bm25_only` row below (added 2026-09-05)
+>
+> **Every `bm25_only` row in this file retrieved sentence fragments, not paragraphs.** The BM25
+> index those runs used was built by a `"\n"`-join/split round trip that treated JATS line wrapping
+> inside a `<p>` as a paragraph boundary: 436,834 records where the corrected extractor produces
+> 344,900, and on the worst article 2,273 fragments where there are 186 paragraphs. So a run
+> labelled "top 8 BM25 paragraphs in context" put roughly eight *sentences* in the prompt.
+>
+> Confirmed by timestamp, not inferred: the index was written 2026-09-05 01:48 and
+> `bm25_only_answers.jsonl.meta.json` records the run at 01:52 the same morning, about fourteen
+> hours before the commit that unified the paragraph convention.
+>
+> The rows are **not withdrawn**, they measure exactly what ran, and the numbers reproduce from
+> their git SHA. But the label claims more context than the run had, so read the retrieval lift
+> they report as a lower bound. **These rows are pending a re-run against the rebuilt index**; that
+> re-run is an experiment with its own prediction, logged before it happens. Nothing else in this
+> file is affected: `no_retrieval` and `oracle_spans` never touch the index, and the SciFact and
+> NFCorpus rows build their own index from benchmark text through `build_index_from_texts`.
+> Details in `DECISION_LOG.md`, "the BM25 index was a cache of sentence fragments."
+
 | Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-08-31 | 0c | n/a (server load test) | `latency/p95_ms` | 30.0 | [27.2, 35.8] | 60 | `stub-c401c89faf18` | `87ee3ac` | concurrency=1 baseline; stub keyword-match handler, not a RAG quality number, see notes below the table |
@@ -178,6 +198,30 @@ half-widths here are about 0.05 and 0.03, so a real 0.07 shortfall on SciFact is
 correctly attributed to the known implementation differences (untuned `k1=1.5, b=0.75` against
 Lucene's `0.9/0.4`, no stemming, no stopword removal, one concatenated field instead of two
 weighted ones).
+
+### k1=1.2 vs k1=1.5, paired on BEIR, 2026-09-06
+
+Asked whether the standard Okapi configuration (k1=1.2, b=0.75) had ever been tried. It had not.
+Run on BEIR rather than the domain set, deliberately: the domain set is currently ~55% defective,
+and the v4 audit reserved its independence for phase D. b was already 0.75, so only k1 changed.
+Paired, one index per dataset scored twice, because k1 is a scoring-time parameter.
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-06 | M1/C | SciFact (BEIR test) | `retrieval/ndcg@10` (k1=1.2) | 0.600 | [0.553, 0.649] | 300 | `cfg-0338e902ce5e`+k1=1.2 | `b40d84e` | **paired vs k1=1.5: +0.0020, 95% CI [-0.0050, +0.0090], no detectable difference** |
+| 2026-09-06 | M1/C | NFCorpus (BEIR test) | `retrieval/ndcg@10` (k1=1.2) | 0.286 | [0.253, 0.318] | 323 | `cfg-0338e902ce5e`+k1=1.2 | `b40d84e` | **paired vs k1=1.5: -0.0023, 95% CI [-0.0057, +0.0005], no detectable difference**, and the sign flips against SciFact |
+
+**k1 stays at 1.5.** The rule was fixed before the run: only a paired interval excluding zero moves
+the default. Both straddle zero, both point estimates are two thousandths, and the two datasets
+disagree about the direction.
+
+**The finding worth keeping is that k1 barely does anything here.** It changed recall@10 for **4 of
+300** SciFact queries and 15 of 323 NFCorpus queries; most rankings came out bit-identical. k1
+governs how fast a repeated term saturates, so its leverage scales with within-document term
+frequency, and on abstracts (and on this project's 92-token paragraphs) almost every term appears
+once. **k1 is close to inert for short-document retrieval.** The knob with real leverage on this
+corpus is `b`, because the corpus mixes 1,500-character abstracts with short body paragraphs, and
+that is still untested.
 
 **The NFCorpus MRR/recall gap is the most instructive number in the table.** MRR 0.505 against
 recall@10 0.135 on the same ranking is not a contradiction: NFCorpus averages 38 relevant documents
@@ -485,6 +529,149 @@ Keep names consistent so rows stay comparable over the whole project.
 - `agent/quality_delta_vs_ragchain`, `agent/cost_multiplier_vs_ragchain`, `agent/p95_delta_ms`
 - `ann/recall_at_ef_*`, `ann/latency_at_ef_*`: the sweep that makes the recall/latency curve
 - `etl/articles_parsed`, `etl/wall_clock_s`, `etl/output_files`, `etl/skew_ratio`
+
+> ### Standing caveat on every phase C row below (added 2026-09-06, after human review)
+>
+> **A human read 20 of the 138 paragraphs and marked 11 of them wrong: 55%, 95% CI [34%, 74%].**
+> That is the third time this project has measured roughly a 50% defect rate in unreviewed
+> agent-written labels (phase A1: 4 of 8; the strength pass: 5 of 11). Two systematic causes, both
+> traceable to a design decision logged on 2026-09-05:
+>
+> 1. **Tautological queries (6 of 11).** The rule that anchors appear verbatim in both queries is
+>    sound only if anchors are *identifiers*. The generator often chose the *finding* instead, so
+>    the question carried its own answer: "How many amplicons were designed to cover the 159 kb
+>    target region, specifically 1663 amplicons?"
+> 2. **The paragraph does not answer the query (5 of 11).** The query asked about the topic a
+>    paragraph announces rather than anything it states. One paragraph says a systematic analysis
+>    "has been lacking" and produced "What is the role of RiboSis in cancer according to recent
+>    pan-cancer analyses?"
+>
+> **What this does and does not invalidate.** The recall figures are rates over a set that is
+> roughly half defective, so **`retrieval/recall@10` = 0.801 is withdrawn as an estimate of
+> anything** and the set must be rebuilt before a real one is quoted.
+>
+> **The lexical-bias result survives, and strengthens.** It was re-tested against a mechanical
+> tautology proxy validated on the 20 human verdicts (precision 1.00, catching 6 of the 11):
+>
+> | subset | lexical | paraphrased | delta | McNemar p | pairs |
+> |---|---|---|---|---|---|
+> | all 138 paragraphs | 0.870 | 0.732 | +13.8pp | 0.000 | 138 |
+> | clean (flagged removed) | 0.895 | 0.737 | **+15.8pp** | 0.000 | 95 |
+> | flagged as tautological | 0.814 | 0.721 | +9.3pp | 0.219 | 43 |
+> | human-marked `wrong` | 1.000 | 1.000 | +0.0pp | 1.000 | 11 |
+>
+> The defective queries are **trivially easy** (100% recall in both styles, zero gap, because a
+> query containing its own answer is found by anyone) and were **diluting** the effect, not
+> creating it. Removing them makes it larger. So the finding is not an artifact of the defect; it
+> is measured despite it.
+>
+> Details in `DECISION_LOG.md`, "the retrieval set is 55% defective, and what the defects were."
+
+### Phase C, the domain `retrieval` set: INTERIM, half the strata (2026-09-05)
+
+**These are not the phase C exit number.** The build stopped at **138 of 330 paragraphs** when the
+free tier's 200,000-tokens-per-day budget ran out: abstract 55/55, intro 55/55, methods 28/55,
+and results / discussion / body_other not started. n=276 queries is also below the plan's n>=300.
+Reported because the measurement is real and the code path is validated end to end, and because
+the lexical-bias result is unlikely to move. Superseded the moment the set is finished.
+
+**Two caveats attach to every row here.** (1) The **single-gold hole rate is not yet measured**
+(no token budget left for `--measure-holes`), so every recall figure is a **lower bound** by an
+unknown amount: another paragraph may answer a query as well as the gold one and scores as a miss.
+(2) **No labels have been reviewed by a person yet.** `eval/retrieval_worksheet.md` is generated
+and waiting; on this project's measured base rate, unreviewed agent-written labels run about 50%
+defective.
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@10` | 0.801 | [0.754, 0.848] | 276 | `cfg-50865433fd64` | `b40d84e` | BM25 k1=1.5 b=0.75 over the rebuilt 344,900-paragraph index, top_k=100. Both query styles pooled |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@1` | 0.554 | [0.493, 0.612] | 276 | `cfg-50865433fd64` | `b40d84e` | |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@100` | 0.938 | [0.909, 0.964] | 276 | `cfg-50865433fd64` | `b40d84e` | 6% of gold paragraphs are not in the top 100 at all |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/ndcg@10` | 0.671 | [0.624, 0.717] | 276 | `cfg-50865433fd64` | `b40d84e` | |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/mrr` | 0.637 | [0.589, 0.685] | 276 | `cfg-50865433fd64` | `b40d84e` | |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@10` (lexical style) | 0.870 | [0.812, 0.920] | 138 | `cfg-50865433fd64` | `b40d84e` | **paired vs paraphrased below: delta +13.8pp, discordant 21/2, McNemar exact p=0.000** |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@10` (paraphrased style) | 0.732 | [0.652, 0.804] | 138 | `cfg-50865433fd64` | `b40d84e` | same 138 paragraphs, same gold spans; only the query wording differs |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@10` (abstract) | 0.818 | [0.736, 0.879] | 110 | `cfg-50865433fd64` | `b40d84e` | per-section stratum |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@10` (intro) | 0.773 | [0.686, 0.841] | 110 | `cfg-50865433fd64` | `b40d84e` | per-section stratum |
+| 2026-09-05 | M1/C | retrieval (domain, INTERIM) | `retrieval/recall@10` (methods) | 0.821 | [0.702, 0.900] | 56 | `cfg-50865433fd64` | `b40d84e` | per-section stratum, only 28 of 55 paragraphs built |
+
+**Git SHA `b40d84e`:** these rows were measured from an uncommitted working tree and carried
+`pending` until it was committed, rather than being stamped with `8c710c3`, which was HEAD at the
+time and named code that did not run. `b40d84e` is the commit containing every module that produced
+them. Recorded this way because a SHA resolving to the wrong code is the exact defect
+`common/run_meta.py`'s `config_hash` docstring was written about.
+
+**The lexical-bias row is the finding here**, and it is the one least likely to move when the set
+is finished. Both styles ask about the same fact, anchored on the same verbatim identifiers,
+against the same gold span; only the surrounding prose differs. BM25 loses **13.8 points of
+recall@10** to that alone. Note where the loss lands: recall@100 barely moves (0.971 to 0.906)
+while recall@1 falls from 0.652 to 0.457, so wording is not deciding whether the right paragraph
+is reachable, it is deciding where in the ranking it sits. The practical consequence is that a
+retrieval set built only from wording-reusing queries, which is what generating queries from
+paragraphs naturally produces, would have credited BM25 with about 14 points it does not have
+against any semantic retriever it is later compared to.
+
+**Verification pass, 2026-09-06.** Everything above was re-checked before any more budget was
+spent on it. What was confirmed:
+
+- **Reproducible.** The scoring run was repeated end to end: **zero differences** in any metric,
+  and the same computed config hash `cfg-50865433fd64`. The bootstrap CIs are seeded, so this is a
+  real check that the pipeline is deterministic, not a coincidence.
+- **The harness is unchanged by the phase C work.** SciFact re-run through the same BM25 and the
+  same metrics reproduces the logged run **identically to four decimals** on all five metrics
+  (nDCG@10 0.5979, recall@100 0.8246, 90% and 91% of the published Pyserini reference). The
+  `common/corpus_text.py` refactor changed no behaviour.
+- **The set is mechanically clean.** `python -m eval.verify_retrieval_set`: all 138 gold spans
+  resolve to text matching a stored content hash, every anchor is still present in the paragraph
+  and in both queries, every stored `lexical_overlap` recomputes to its stored value, all 138 pairs
+  are complete, no duplicate query ids or query texts, **no row cites a held-out article**, and no
+  article contributes more than 2 paragraphs (so the queries are not correlated in a way that would
+  narrow these intervals).
+- **The +13.8pp lexical result survives its confound check, and the check points the other way.**
+  Paraphrased queries are slightly **longer** than lexical ones (18.1 against 17.4 tokens, longer
+  on 72 of 138 pairs), which if anything favours them, since more query terms means more chances to
+  match. The gap is +13.8pp anyway, so it is conservative.
+- **An unplanned asset: 25 of 138 paragraphs are post-2024.** The answer set could never populate
+  this stratum (1 of 8 cases), which is why `PROJECT_PLAN.md`'s statistical rule 4 has gone
+  unanswerable. It does not matter for BM25, which cannot memorise anything, but it means the
+  memorisation question becomes askable here the moment a dense or LLM-based retriever lands in
+  Tier 2.
+
+**recall@10 against lexical overlap** (`score_retrieval.py` now prints this on every run). This is
+the table that makes the paired style result interpretable: recall tracks how much of the query
+survives into the gold paragraph, and inside a fixed band the style label adds almost nothing
+(1 to 6pp, against 13.8pp unconditioned). The transferable claim is about **overlap**; style is
+just a controlled way of moving it.
+
+| overlap band | recall@10 | 95% CI | n | lexical | paraphrased |
+|---|---|---|---|---|---|
+| [0.00, 0.50) | 0.429 | [0.265, 0.609] | 28 | n=1 | 0.444 (n=27) |
+| [0.50, 0.65) | 0.767 | [0.669, 0.842] | 90 | 0.833 (n=18) | 0.750 (n=72) |
+| [0.65, 0.80) | 0.873 | [0.794, 0.924] | 102 | 0.853 (n=68) | 0.912 (n=34) |
+| [0.80, 0.90) | 0.913 | [0.797, 0.966] | 46 | 0.927 (n=41) | 0.800 (n=5) |
+| [0.90, 1.01) | 0.900 | [0.596, 0.982] | 10 | 0.900 (n=10) | n=0 |
+
+The paired gap is present in **every** stratum and at **every** cutoff, largest where wording should
+matter most: methods +21.4pp (p=0.031), intro +16.4pp (p=0.012), abstract +7.3pp (p=0.219); and
++19.6pp at k=1 falling monotonically to +6.5pp at k=100. Method in `DECISION_LOG.md`, "is the
+lexical style gap actually the style, or is it the overlap underneath it?"
+
+**Median rank of the gold paragraph, when it is found at all, is 1**, and 17 of 276 queries never
+surface it inside the top 100.
+
+**Lexical overlap, against human-written queries** (`build_retrieval_set --calibrate-overlap`,
+share of a query's distinct tokens present in its gold document):
+
+| Query set | mean | median | n |
+|---|---|---|---|
+| ours, lexical style | 0.763 | 0.778 | 138 |
+| ours, paraphrased style | 0.588 | 0.588 | 138 |
+| SciFact, human-written | 0.529 | 0.533 | 300 |
+| NFCorpus, human-written | 0.261 | 0.167 | 323 |
+
+De-lexicalization moves this set to roughly SciFact's genre and does not reach NFCorpus's. That is
+the honest position of the set on the bias axis, and it belongs on any row read out of it.
+
 
 ---
 
