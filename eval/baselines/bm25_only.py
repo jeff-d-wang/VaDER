@@ -51,9 +51,7 @@ def run(cases: list[dict], index: BM25Index, model: str, top_k: int) -> list[dic
                 })
                 continue
 
-            excerpts = [({"pmcid": para.pmcid, "section": para.section,
-                          "char_start": para.char_start, "char_end": para.char_end}, para.text)
-                        for para, _score in hits]
+            excerpts = [(chunk.span(), chunk.text) for chunk, _score in hits]
             out = groq_chat_json(
                 EXCERPT_PROMPT.format(query=case["query"], excerpts=format_excerpts(excerpts)),
                 model=model)

@@ -5,45 +5,51 @@ and also satisfies the project's own rule to implement at least one
 component with no library (`START_HERE.md` standing rule 2 / the
 "Protecting the learning" section of `PROJECT_PLAN.md`).
 
-Indexes at paragraph granularity (abstract and body paragraphs; the title
-is not indexed), each record carrying real provenance,
-(pmcid, section, char_start, char_end),
-using the exact offset convention corpus_text.py already established
-(paragraphs joined by "\\n"), so a BM25 hit is a real, citable span, not
-just a ranked document id.
+**The index unit is a `common.corpus_text.Chunk`** (phase D). A chunk carries
+`source_spans`, a list of `(section, char_start, char_end)` back into the
+source article, using the exact offset convention `corpus_text.py` owns
+(paragraphs joined by "\\n"), so a BM25 hit is a real, citable span, not just
+a ranked id. The raw-paragraph index of earlier phases is now just the
+identity chunker (`retrieval.chunker.paragraph_chunks`): one chunk per
+paragraph, one span each.
 
 Formula: standard Okapi BM25 with the "+1" IDF variant (never negative,
 unlike the classic Robertson-Sparck Jones form, which can go negative for a
 term that appears in over half the corpus, e.g. "cancer" here):
 
     score(D, Q) = sum over query terms t of:
-        idf(t) * f(t, D) * (k1 + 1) / (f(t, D) + k1 * (1 - b + b * |D| / avgdl))
+        qtf(t) * idf(t) * f(t, D) * (k1 + 1) / (f(t, D) + k1 * (1 - b + b * |D| / avgdl))
 
     idf(t) = ln((N - n(t) + 0.5) / (n(t) + 0.5) + 1)
 
-k1 and b are parameters, defaulting to k1=1.5, b=0.75, and `search` takes
-overrides so a comparison needs no re-indexing (they affect scoring only,
-never the index).
+k1 and b are parameters, defaulting to k1=1.5, b=0.75, and `search` / `score`
+take overrides so a comparison needs no re-indexing (they affect scoring
+only, never the index).
+
+**Search is a postings scan** (phase D, per `DECISION_LOG.md` "BM25 search is
+a full scan"). The index stores `postings: term -> [(chunk_idx, tf)]` rather
+than a `Counter` per chunk, and `search` iterates only the postings of the
+query terms, accumulating into a dict. A chunk containing no query term
+scores 0 and was discarded by the old full scan too, so the ranking is
+identical; memory drops because there is no per-chunk `Counter`. The
+`test_bm25.py` gate asserts the identical ranking against a brute-force BM25.
 
 **On the defaults.** Robertson & Zaragoza (2009) give k1 as a RANGE, usually
-1.2 to 2.0, with b=0.75. This module's docstring previously called k1=1.5
-"the standard textbook default", which was too strong: the widely deployed
-single default, in Lucene and Elasticsearch, is k1=1.2. Corrected 2026-09-06
-after the user asked whether 1.2 had ever been tried. It had not. See
-docs/DECISION_LOG.md, "does k1=1.2 beat k1=1.5", for what the comparison
-found and why it was run against BEIR rather than against this project's own
-domain set.
+1.2 to 2.0, with b=0.75. The widely deployed single default, in Lucene and
+Elasticsearch, is k1=1.2; see `docs/DECISION_LOG.md`, "does k1=1.2 beat
+k1=1.5", for why this project kept 1.5 (the two are near-inert apart here).
 """
 from __future__ import annotations
 
 import math
 import pickle
 import re
+from array import array
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from common.corpus_text import iter_paragraphs as _iter_paragraphs
+from common.corpus_text import Chunk, parse_root
 
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-.]*")  # keeps "c.1100delC", "BRCA1" etc. as one token
 
@@ -56,48 +62,66 @@ def tokenize(text: str) -> list[str]:
 
 
 @dataclass
-class Paragraph:
-    pmcid: str
-    section: str
-    char_start: int
-    char_end: int
-    text: str
-
-
-@dataclass
 class BM25Index:
-    paragraphs: list[Paragraph]
-    doc_freq: dict[str, int]          # term -> number of paragraphs containing it
-    term_freqs: list[Counter]         # per-paragraph term counts, same order as paragraphs
-    doc_lengths: list[int]            # token count per paragraph
+    chunks: list[Chunk]
+    # term -> a flat array of interleaved (chunk_idx, term_freq, chunk_idx, ...).
+    # A list of (int, int) tuples costs about 64 bytes an entry in CPython; the
+    # array costs 8. At ~19M postings entries over this corpus that is the
+    # difference between a ~1.2GB structure and a ~150MB one, which matters on
+    # an 8GB machine (DECISION_LOG.md, "BM25 search is a full scan").
+    postings: dict[str, "array"]
+    doc_lengths: list[int]                      # token count per chunk, same order as chunks
     avg_doc_length: float
     n_docs: int
+    doc_freq: dict[str, int] = field(default_factory=dict)  # term -> #chunks containing it
 
     def idf(self, term: str) -> float:
         n_t = self.doc_freq.get(term, 0)
         return math.log((self.n_docs - n_t + 0.5) / (n_t + 0.5) + 1)
 
+    def _term_freq(self, term: str, i: int) -> int:
+        """tf of `term` in chunk `i`, read off the postings array. Linear in
+        that term's document frequency; used only by `score` (a test and
+        ad-hoc helper). `search` never calls it, it accumulates over postings
+        directly."""
+        plist = self.postings.get(term, ())
+        for j in range(0, len(plist), 2):
+            if plist[j] == i:
+                return plist[j + 1]
+        return 0
+
     def score(self, query_terms: list[str], i: int, k1: float = K1, b: float = B) -> float:
-        tf = self.term_freqs[i]
         dl = self.doc_lengths[i]
         total = 0.0
-        for t in query_terms:
-            f = tf.get(t, 0)
+        for t, qtf in Counter(query_terms).items():
+            f = self._term_freq(t, i)
             if f == 0:
                 continue
             numerator = f * (k1 + 1)
             denominator = f + k1 * (1 - b + b * dl / self.avg_doc_length)
-            total += self.idf(t) * numerator / denominator
+            total += qtf * self.idf(t) * numerator / denominator
         return total
 
     def search(self, query: str, top_k: int = 5,
-               k1: float = K1, b: float = B) -> list[tuple[Paragraph, float]]:
+               k1: float = K1, b: float = B) -> list[tuple[Chunk, float]]:
         """k1/b are scoring-time parameters, so a sweep reuses one index."""
-        terms = tokenize(query)
-        scored = [(i, self.score(terms, i, k1, b)) for i in range(self.n_docs)]
-        scored = [(i, s) for i, s in scored if s > 0]
-        scored.sort(key=lambda pair: pair[1], reverse=True)
-        return [(self.paragraphs[i], s) for i, s in scored[:top_k]]
+        scores: dict[int, float] = {}
+        for t, qtf in Counter(tokenize(query)).items():
+            plist = self.postings.get(t)
+            if not plist:
+                continue
+            idf = self.idf(t)
+            for j in range(0, len(plist), 2):
+                i, f = plist[j], plist[j + 1]
+                dl = self.doc_lengths[i]
+                denominator = f + k1 * (1 - b + b * dl / self.avg_doc_length)
+                scores[i] = scores.get(i, 0.0) + qtf * idf * f * (k1 + 1) / denominator
+        # Tie-break on ascending chunk index, matching the old full scan's
+        # stable sort over range(n_docs). Without the secondary key the dict's
+        # insertion order (first query term's postings first) would break ties
+        # differently and the identical-ranking gate could fail on equal scores.
+        ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+        return [(self.chunks[i], s) for i, s in ranked[:top_k]]
 
     def save(self, path: Path) -> None:
         with open(path, "wb") as f:
@@ -106,11 +130,10 @@ class BM25Index:
     @staticmethod
     def load(path: Path) -> "BM25Index":
         """A pickle records the module path of every class inside it, so an
-        index built before this module moved (eval/bm25.py to
-        retrieval/bm25.py, 2026-09-04) raises a bare ModuleNotFoundError
+        index built before a module moved raises a bare ModuleNotFoundError
         that says nothing about what to do. Caught here and turned into the
         instruction: rebuild. The index is git-ignored and regenerable in
-        about 100 seconds, so rebuilding is always the right answer."""
+        about a minute, so rebuilding is always the right answer."""
         try:
             with open(path, "rb") as f:
                 return pickle.load(f)
@@ -121,56 +144,52 @@ class BM25Index:
             ) from exc
 
 
-def iter_paragraphs(xml_path: Path, pmcid: str) -> list[Paragraph]:
-    """All abstract + body paragraphs for one article, tagged with the pmcid,
-    so a hit here is directly usable as a gold_span-shaped citation. Offsets
-    come from common.corpus_text, which owns the convention."""
-    return [Paragraph(pmcid, section, start, end, text)
-            for section, text, start, end in _iter_paragraphs(xml_path)
-            if text.strip()]
+def index_from_chunks(chunks: list[Chunk]) -> BM25Index:
+    """Build the postings index from chunks.
 
-
-def index_from_paragraphs(paragraphs: list[Paragraph]) -> BM25Index:
-    """The scoring-side half of index construction, split out from
-    build_index so the identical formula can be pointed at something other
-    than this project's own corpus. That is what makes the harness
-    validation in benchmarks/run_benchmark.py meaningful: SciFact and
-    NFCorpus are scored by exactly this code, not by a reimplementation of
-    it that could agree with the reference while the real one disagrees."""
-    term_freqs = [Counter(tokenize(p.text)) for p in paragraphs]
-    doc_lengths = [sum(tf.values()) for tf in term_freqs]
-    doc_freq: dict[str, int] = {}
-    for tf in term_freqs:
-        for term in tf:
-            doc_freq[term] = doc_freq.get(term, 0) + 1
-    n_docs = len(paragraphs)
+    Split out from `build_index` so the identical formula can be pointed at
+    something other than this project's own corpus. That is what makes the
+    harness validation in `benchmarks/run_benchmark.py` meaningful: SciFact
+    and NFCorpus are scored by exactly this code."""
+    flat: dict[str, list[int]] = {}
+    doc_lengths: list[int] = []
+    for i, chunk in enumerate(chunks):
+        tf = Counter(tokenize(chunk.text))
+        doc_lengths.append(sum(tf.values()))
+        for term, count in tf.items():
+            flat.setdefault(term, []).extend((i, count))
+    postings = {term: array("i", pairs) for term, pairs in flat.items()}
+    n_docs = len(chunks)
     avg_doc_length = sum(doc_lengths) / n_docs if n_docs else 0.0
-
-    return BM25Index(
-        paragraphs=paragraphs, doc_freq=doc_freq, term_freqs=term_freqs,
-        doc_lengths=doc_lengths, avg_doc_length=avg_doc_length, n_docs=n_docs,
-    )
+    doc_freq = {term: len(p) // 2 for term, p in postings.items()}
+    return BM25Index(chunks=chunks, postings=postings, doc_lengths=doc_lengths,
+                     avg_doc_length=avg_doc_length, n_docs=n_docs, doc_freq=doc_freq)
 
 
-def build_index(xml_dir: Path, pmcids: list[str], min_paragraph_words: int = 5) -> BM25Index:
-    paragraphs: list[Paragraph] = []
+def build_index(xml_dir: Path, pmcids: list[str], chunker=None) -> BM25Index:
+    """Chunk every article with `chunker` (default: the phase D structure-aware
+    chunker) and index the result. Pass `retrieval.chunker.paragraph_chunks`
+    for the raw-paragraph (identity) index."""
+    from retrieval.chunker import chunk_article  # local: chunker imports tokenize from here
+    chunker = chunker or chunk_article
+    chunks: list[Chunk] = []
     for pmcid in pmcids:
-        xml_path = xml_dir / f"{pmcid}.xml"
-        if not xml_path.exists():
+        root = parse_root(xml_dir / f"{pmcid}.xml")
+        if root is None:
             continue
-        for p in iter_paragraphs(xml_path, pmcid):
-            if len(tokenize(p.text)) >= min_paragraph_words:
-                paragraphs.append(p)
-    return index_from_paragraphs(paragraphs)
+        chunks.extend(chunker(root, pmcid))
+    return index_from_chunks(chunks)
 
 
 def build_index_from_texts(docs: list[tuple[str, str]]) -> BM25Index:
-    """Index (doc_id, text) pairs as whole documents, one Paragraph each.
+    """Index (doc_id, text) pairs as whole documents, one Chunk each.
 
     For a benchmark corpus there is no section structure and no char-offset
-    provenance to preserve, so those fields are degenerate by design:
-    `section` is "doc" and the offsets span the whole text. They are kept
-    rather than made optional so there is exactly one index type in this
-    project, and so a benchmark hit and a corpus hit are the same shape."""
-    paragraphs = [Paragraph(doc_id, "doc", 0, len(text), text) for doc_id, text in docs]
-    return index_from_paragraphs(paragraphs)
+    provenance to preserve, so `source_spans` is degenerate by design: one
+    span, section "doc", offsets spanning the whole text. Kept rather than
+    made optional so there is exactly one index type and a benchmark hit and
+    a corpus hit are the same shape."""
+    chunks = [Chunk(chunk_id=doc_id, pmcid=doc_id, text=text,
+                    source_spans=[{"section": "doc", "char_start": 0, "char_end": len(text)}])
+              for doc_id, text in docs]
+    return index_from_chunks(chunks)

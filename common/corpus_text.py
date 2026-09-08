@@ -240,6 +240,17 @@ class Chunk:
     text: str
     source_spans: list[dict]  # each: {"section", "char_start", "char_end"}
 
+    def span(self) -> dict:
+        """One (pmcid, section, char_start, char_end) covering all source
+        spans, for a consumer that needs a single citation span rather than
+        the list: the earliest start to the latest end, in the first span's
+        section. Only meaningful when every source span is in one section,
+        which the phase D chunker guarantees (it never merges across a
+        section boundary)."""
+        return {"pmcid": self.pmcid, "section": self.source_spans[0]["section"],
+                "char_start": min(s["char_start"] for s in self.source_spans),
+                "char_end": max(s["char_end"] for s in self.source_spans)}
+
 
 def chunk_hits_span(chunk: Chunk, gold: dict) -> bool:
     """A chunk is a hit if any of its source spans overlaps the gold span."""
