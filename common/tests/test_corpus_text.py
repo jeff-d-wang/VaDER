@@ -70,18 +70,29 @@ class TestOffsetConvention(unittest.TestCase):
 
 
 class TestConsumersAgree(unittest.TestCase):
-    """bm25, find_coverage and service/search.py each turn paragraphs into
-    their own span type. All three must land on the same offsets."""
+    """bm25 and find_coverage each turn paragraphs into their own span type;
+    both must land on the same offsets as corpus_text.py's own convention.
+
+    service/search.py used to be a third independent consumer (its own
+    per-candidate XML scan, `_find_span_in_xml`) and had its own agreement
+    test here. Phase E replaced that scan with retrieval.bm25/chunker
+    directly (docs/DECISION_LOG.md, the phase E service rewrite): the
+    service no longer computes a span itself, it reads `Chunk.span()` off
+    the same index `test_bm25_spans_resolve` below already checks. A
+    dedicated service-vs-bm25 agreement test would now be asserting that
+    one piece of code agrees with itself, so it was removed rather than
+    updated to hit the same function twice."""
 
     def test_bm25_spans_resolve(self):
-        from retrieval.bm25 import iter_paragraphs as bm25_paragraphs
+        from retrieval.chunker import paragraph_chunks  # bm25 indexes what this yields
         with tempfile.TemporaryDirectory() as tmp:
             path = write(tmp, WITH_PARAGRAPHS)
-            paras = bm25_paragraphs(path, "PMC1")
-            self.assertTrue(paras)
-            for p in paras:
-                whole = extract_section_text(path, p.section)
-                self.assertEqual(whole[p.char_start:p.char_end], p.text)
+            chunks = paragraph_chunks(parse_root(path), "PMC1")
+            self.assertTrue(chunks)
+            for c in chunks:
+                s = c.source_spans[0]
+                whole = extract_section_text(path, s["section"])
+                self.assertEqual(whole[s["char_start"]:s["char_end"]], c.text)
 
     def test_find_coverage_spans_resolve(self):
         from eval.find_coverage import _extract_paragraphs
@@ -91,30 +102,6 @@ class TestConsumersAgree(unittest.TestCase):
             self.assertTrue(paras)
             for section, text, start, end in paras:
                 self.assertEqual(extract_section_text(path, section)[start:end], text)
-
-    def test_service_search_span_resolves(self):
-        from service.search import _find_span_in_xml
-        with tempfile.TemporaryDirectory() as tmp:
-            path = write(tmp, WITH_PARAGRAPHS)
-            span = _find_span_in_xml(path, ["brca1"])
-            self.assertIsNotNone(span)
-            whole = extract_section_text(path, span.section)
-            self.assertEqual(whole[span.char_start:span.char_end],
-                             "Body para one mentions BRCA1.")
-            self.assertEqual(span.title, "A Title")
-
-    def test_search_and_bm25_agree_on_the_same_paragraph(self):
-        """The one that would have caught a drift: the same body paragraph,
-        reached by two different code paths, must get the same offsets."""
-        from retrieval.bm25 import iter_paragraphs as bm25_paragraphs
-        from service.search import _find_span_in_xml
-        with tempfile.TemporaryDirectory() as tmp:
-            path = write(tmp, WITH_PARAGRAPHS)
-            span = _find_span_in_xml(path, ["brca1"])
-            match = [p for p in bm25_paragraphs(path, "PMC1") if p.text == span.text]
-            self.assertEqual(len(match), 1)
-            self.assertEqual((match[0].section, match[0].char_start, match[0].char_end),
-                             (span.section, span.char_start, span.char_end))
 
 
 

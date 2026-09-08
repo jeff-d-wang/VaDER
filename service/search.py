@@ -1,33 +1,39 @@
 """
-Trivial keyword-match handler for Step 0c. This is not a retriever: it exists
-only so the FastAPI service in app.py has real, variable-cost work to do per
-request, so the streaming, TTFT, and concurrency measurements it produces are
-honest. See docs/DECISION_LOG.md, "Step 0c built as a stub handler, v1
-formally dropped." No chunker, no embedder, no vector DB, no LLM.
+Phase E: the real retrieval handler behind the streaming service. Replaces
+Step 0c's stub keyword matcher (title-prefilter + per-candidate XML scan; see
+docs/DECISION_LOG.md, "Step 0c built as a stub handler, v1 formally
+dropped"). This is the same BM25-over-structure-aware-chunks path phase D
+built and measured (`retrieval/bm25.py`, `retrieval/chunker.py`): one
+postings-based index built once at startup, searched per request. No LLM yet
+(that is Phase E's generation half, added separately so a load test can
+measure the retrieval-only stage before the two are bundled).
 
-Two-stage literal keyword search:
-  1. Candidate selection: articles whose title contains a query word, ranked
-     by how many query words matched. In-memory, over the manifest.
-  2. Span extraction: for each candidate in rank order, open its XML off disk
-     and return the first body paragraph containing a query word, as a
-     (pmcid, section, char_start, char_end) span. Stops at max_matches spans,
-     max_scan candidates opened, or a wall-clock deadline, whichever comes
-     first. That cap is the backpressure mechanism: an unbounded or
-     zero-hit query cannot hang the server indefinitely.
+Two consequences worth naming, since they change what `SearchStats`' fields
+mean without changing the streamed JSON shape (app.py's callers, and every
+field name on the wire, are unchanged):
+
+- There is no per-candidate XML scan to cap or time out mid-flight anymore:
+  a chunk's text is already in the index. `candidates_matched_by_title` and
+  `candidates_scanned` both now report the same number, the size of the
+  ranked hit pool the index returned (bounded by `max_scan`), because BM25
+  has only one honest "how much did we look at" number where the stub had
+  two different ones.
+- `max_scan` is repurposed from "candidate files opened" to "how deep into
+  the ranked index results to retrieve before truncating to `max_matches`",
+  i.e. `BM25Index.search`'s `top_k`. `deadline_s` is still a wall-clock
+  guard around the search call, now checked once after a single bounded
+  index lookup rather than between many small per-candidate steps.
 """
 from __future__ import annotations
 
 import csv
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
-from common.corpus_text import iter_paragraphs_from_root, parse_root
-
-_WORD_RE = re.compile(r"[A-Za-z0-9]+")
-_STOPWORDS = {"the", "and", "for", "with", "that", "this", "from", "into", "role", "its", "are"}
+from common.trace import span
+from retrieval.bm25 import BM25Index, tokenize
 
 
 @dataclass
@@ -54,7 +60,7 @@ class SearchStats:
     candidates_matched_by_title: int = 0
     candidates_scanned: int = 0
     matches_found: int = 0
-    stopped_reason: str = ""  # max_matches | max_scan | deadline | exhausted | no_query_words
+    stopped_reason: str = ""  # max_matches | deadline | exhausted | no_query_words
 
 
 def load_manifest(manifest_path: Path) -> list[ArticleMeta]:
@@ -75,77 +81,38 @@ def load_manifest(manifest_path: Path) -> list[ArticleMeta]:
     return articles
 
 
-def _query_words(query: str) -> list[str]:
-    words = [w.lower() for w in _WORD_RE.findall(query)]
-    return [w for w in words if len(w) >= 3 and w not in _STOPWORDS]
-
-
-def _title_candidates(words: list[str], articles: list[ArticleMeta]) -> list[ArticleMeta]:
-    """Articles whose title contains any query word, most-matching-words first."""
-    scored = []
-    for a in articles:
-        title_lower = a.title.lower()
-        score = sum(1 for w in words if w in title_lower)
-        if score > 0:
-            scored.append((score, a))
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [a for _, a in scored]
-
-
-def _find_span_in_xml(xml_path: Path, words: list[str]) -> MatchSpan | None:
-    """First body paragraph containing a query word, as a source span. Real
-    disk I/O and real XML parsing per candidate, which is the point: this is
-    what gives the service genuine, variable-cost per-request latency.
-
-    Offsets come from common.corpus_text, which owns the convention (one
-    parse per candidate still, hence parse_root rather than the by-path
-    helper: a second parse would inflate the latency this measures)."""
-    root = parse_root(xml_path)
-    if root is None:
-        return None
-    title_el = root.find(".//article-title")
-    title = "".join(title_el.itertext()).strip() if title_el is not None else xml_path.stem
-
-    for text, start, end in iter_paragraphs_from_root(root, "body"):
-        if any(w in text.lower() for w in words):
-            return MatchSpan(
-                pmcid=xml_path.stem, title=title, section="body",
-                char_start=start, char_end=end, text=text[:500],
-            )
-    return None
-
-
-def search(query: str, articles: list[ArticleMeta], xml_dir: Path, stats: SearchStats, *,
-           max_scan: int = 40, max_matches: int = 5,
+def search(query: str, articles: list[ArticleMeta], stats: SearchStats, *,
+           index: BM25Index, max_scan: int = 40, max_matches: int = 5,
            deadline_s: float = 5.0) -> Iterator[MatchSpan]:
     """Yields each MatchSpan as it's found, so a caller streaming the response
     can flush the first result as soon as it exists rather than waiting for
     the whole search to finish. Mutates `stats` in place; read it once the
     generator is exhausted to see the result count and why the search
-    stopped."""
-    words = _query_words(query)
+    stopped. `index` is the corpus's BM25 index, built once at service
+    startup (see app.py's lifespan) and searched fresh per request."""
+    words = tokenize(query)
     stats.query_words = words
     if not words:
         stats.stopped_reason = "no_query_words"
         return
 
-    candidates = _title_candidates(words, articles)
-    stats.candidates_matched_by_title = len(candidates)
+    t0 = time.monotonic()
+    with span("retrieve", retriever="bm25", top_k=max_scan) as s:
+        hits = index.search(query, top_k=max_scan)
+        s["retrieval.hit_count"] = len(hits)
+    stats.candidates_matched_by_title = len(hits)
+    stats.candidates_scanned = len(hits)
+    if time.monotonic() - t0 > deadline_s:
+        stats.stopped_reason = "deadline"
+        return
 
-    start = time.monotonic()
-    for article in candidates:
-        if stats.candidates_scanned >= max_scan:
-            stats.stopped_reason = "max_scan"
-            return
-        if time.monotonic() - start > deadline_s:
-            stats.stopped_reason = "deadline"
-            return
-        stats.candidates_scanned += 1
-        span = _find_span_in_xml(xml_dir / f"{article.pmcid}.xml", words)
-        if span is not None:
-            stats.matches_found += 1
-            yield span
-            if stats.matches_found >= max_matches:
-                stats.stopped_reason = "max_matches"
-                return
-    stats.stopped_reason = "exhausted"
+    title_by_pmcid = {a.pmcid: a.title for a in articles}
+    for chunk, _score in hits[:max_matches]:
+        gold_span = chunk.span()  # {pmcid, section, char_start, char_end}
+        stats.matches_found += 1
+        yield MatchSpan(
+            pmcid=chunk.pmcid, title=title_by_pmcid.get(chunk.pmcid, chunk.pmcid),
+            section=gold_span["section"], char_start=gold_span["char_start"],
+            char_end=gold_span["char_end"], text=chunk.text[:500],
+        )
+    stats.stopped_reason = "max_matches" if len(hits) > max_matches else "exhausted"

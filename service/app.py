@@ -1,26 +1,32 @@
 """
-Step 0c: the measurement surface. A FastAPI service wrapping the stub
-keyword-match handler in search.py over the Step 0b corpus. Not a retrieval
-system: see docs/DECISION_LOG.md, "Step 0c built as a stub handler, v1
-formally dropped." It exists so p95 latency, TTFT (time to first streamed
-byte), and concurrency get measured off a real HTTP path from the first
-number, per PROJECT_PLAN.md 0c -- those are properties of a server, not a
-notebook loop, and measuring them in a loop would produce different numbers
-with the same names.
+Phase E: the measurement surface, now in front of the real retrieval pipeline
+instead of Step 0c's stub (docs/DECISION_LOG.md, "Step 0c built as a stub
+handler, v1 formally dropped"). Retrieval is BM25 over the phase D
+structure-aware chunk index (`retrieval/bm25.py`, `retrieval/chunker.py`),
+built once at startup and searched per request. No LLM yet: generation is
+Phase E's next piece, added separately so a load test can isolate the
+retrieval-only stage first. p95 latency, TTFT (time to first streamed byte),
+and concurrency are measured off this real HTTP path, per PROJECT_PLAN.md,
+because those are properties of a server, not a notebook loop, and measuring
+them in a loop would produce different numbers with the same names.
 
 Run:
     cd service
     uvicorn app:app --host 0.0.0.0 --port 8000
 
+Building the BM25 index over the full corpus at startup takes about a
+minute; the process is not ready to serve until it's done (see /healthz).
+
 Env vars (all optional, defaults point at ../corpus):
     VADER_CORPUS_DIR   directory containing manifest.csv and xml/ (default ../corpus)
     VADER_REQUEST_LOG  path to the per-request JSONL log (default ./logs/requests.jsonl)
-    VADER_MAX_SCAN     candidate XML files opened per query (default 40)
+    VADER_MAX_SCAN     chunks retrieved from the index per query, before
+                       truncating to VADER_MAX_MATCHES (default 40)
     VADER_MAX_MATCHES  spans returned per query (default 5)
     VADER_DEADLINE_S   wall-clock cap per search (default 5.0)
 
 Endpoints:
-    GET  /healthz   liveness, corpus size, and the active config
+    GET  /healthz   liveness, corpus size, index size, and the active config
     POST /query     {"query": "BRCA1 pathogenic variant hereditary breast cancer"}
                      -> streamed newline-delimited JSON: one "match" line per
                      supporting span found (as it's found), a "not_found" line
@@ -39,6 +45,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from common.trace import trace_request
+from retrieval.bm25 import build_index
 import service.search as searchmod
 
 # No `from __future__ import annotations` here (unlike the rest of this
@@ -55,25 +63,39 @@ def create_app(*, manifest_path: Path, xml_dir: Path, log_path: Path,
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.articles = searchmod.load_manifest(manifest_path)
-        app.state.xml_dir = xml_dir
+        app.state.articles = articles = searchmod.load_manifest(manifest_path)
+        app.state.index = (build_index(xml_dir, [a.pmcid for a in articles])
+                           if articles else None)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         yield
 
-    app = FastAPI(title="VaDER Step 0c measurement surface", lifespan=lifespan)
+    app = FastAPI(title="VaDER retrieval service", lifespan=lifespan)
 
     class QueryRequest(BaseModel):
         query: str = Field(min_length=3, max_length=500)
 
-    def _stream(query: str, articles: list[searchmod.ArticleMeta], corpus_xml_dir: Path):
+    def _stream(query: str, articles: list[searchmod.ArticleMeta], index):
+        # trace_request's contextvar token must be set and reset within one
+        # synchronous call: Starlette's StreamingResponse pumps a sync
+        # generator one `next()` at a time via `anyio.to_thread.run_sync`,
+        # each of which can land in a different thread/context, so a `with
+        # trace_request(...)` straddling multiple `yield`s breaks contextvar
+        # reset ("Token ... created in a different Context"). Retrieval is
+        # one bounded index.search() call anyway (unlike Step 0c's stub,
+        # there is no per-candidate work to genuinely stream), so it runs to
+        # completion, traced, before the first yield -- which is also the
+        # only place in this generator body guaranteed to execute in a
+        # single dispatch.
         stats = searchmod.SearchStats()
         t0 = time.monotonic()
         ttft_s: Optional[float] = None
         n_yielded = 0
         try:
-            for span in searchmod.search(query, articles, corpus_xml_dir, stats,
-                                          max_scan=max_scan, max_matches=max_matches,
-                                          deadline_s=deadline_s):
+            with trace_request("query", query=query):
+                matches = list(searchmod.search(query, articles, stats, index=index,
+                                                max_scan=max_scan, max_matches=max_matches,
+                                                deadline_s=deadline_s))
+            for span in matches:
                 if ttft_s is None:
                     ttft_s = time.monotonic() - t0
                 n_yielded += 1
@@ -110,19 +132,22 @@ def create_app(*, manifest_path: Path, xml_dir: Path, log_path: Path,
     @app.get("/healthz")
     def healthz(request: Request):
         articles = getattr(request.app.state, "articles", [])
+        index = getattr(request.app.state, "index", None)
         return {
-            "status": "ok" if articles else "corpus not loaded",
+            "status": "ok" if articles and index else "corpus not loaded",
             "corpus_size": len(articles),
+            "index_chunks": index.n_docs if index else 0,
             "config": {"max_scan": max_scan, "max_matches": max_matches, "deadline_s": deadline_s},
         }
 
     @app.post("/query")
     def query(req: QueryRequest, request: Request):
         articles = getattr(request.app.state, "articles", [])
-        if not articles:
+        index = getattr(request.app.state, "index", None)
+        if not articles or index is None:
             raise HTTPException(503, "corpus not loaded; check VADER_CORPUS_DIR and manifest.csv")
         return StreamingResponse(
-            _stream(req.query, articles, request.app.state.xml_dir),
+            _stream(req.query, articles, index),
             media_type="application/x-ndjson",
         )
 

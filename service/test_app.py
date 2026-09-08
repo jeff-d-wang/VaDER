@@ -11,6 +11,7 @@ import unittest
 
 import csv
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -94,7 +95,29 @@ class TestService(unittest.TestCase):
         r = client.get("/healthz")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["corpus_size"], 4, r.json())
+        self.assertGreater(r.json()["index_chunks"], 0, "BM25 index built at startup")
         self.assertEqual(r.json()["config"]["max_scan"], 7, r.json())
+
+    def test_query_writes_a_retrieve_trace_span(self):
+        """Phase E wires common.trace into the request path (DECISION_LOG.md,
+        the phase D/E service rewrite). This is also the regression test for
+        the contextvars bug the first version of this wiring hit: a
+        `trace_request` that stayed open across multiple StreamingResponse
+        `next()` calls raised "Token ... created in a different Context"."""
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        trace_file = tmp / "spans.jsonl"
+        prev = os.environ.get("VADER_TRACE_FILE")
+        os.environ["VADER_TRACE_FILE"] = str(trace_file)
+        self.addCleanup(lambda: os.environ.pop("VADER_TRACE_FILE", None) if prev is None
+                        else os.environ.__setitem__("VADER_TRACE_FILE", prev))
+        client = self.client(max_scan=7, max_matches=3)
+        r, _ = self.query(client, "BRCA1 pathogenic variant breast cancer")
+        self.assertEqual(r.status_code, 200, r.text)
+        spans = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
+        retrieve = [s for s in spans if s["name"] == "retrieve"]
+        self.assertEqual(len(retrieve), 1, spans)
+        self.assertEqual(retrieve[0]["attributes"]["retriever"], "bm25")
+        self.assertGreaterEqual(retrieve[0]["attributes"]["retrieval.hit_count"], 1)
 
     def test_query_returns_a_match_with_a_source_span(self):
         client = self.client(max_scan=7, max_matches=3)
