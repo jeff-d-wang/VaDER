@@ -636,6 +636,28 @@ retrieval set built only from wording-reusing queries, which is what generating 
 paragraphs naturally produces, would have credited BM25 with about 14 points it does not have
 against any semantic retriever it is later compared to.
 
+#### Phase D re-score: chunk-granular vs paragraph-granular index, same 276 queries (2026-09-07)
+
+The same INTERIM set scored against the phase D structure-aware chunk index (193,059 chunks) and
+against a paragraph-granular index (344,900), paired. This is a first M6-style chunking signal on
+the only n>100 retrieval set that exists, and a check that the phase D index does not break phase
+C scoring. **Still INTERIM** (the set is ~55% defective; the paired delta survives that because
+defects hit both arms equally, as the lexical-bias finding does).
+
+| Metric | paragraph index | chunk index | delta |
+|---|---|---|---|
+| recall@10 | 0.801 | 0.786 | -1.4pp (discordant 17 para-only / 13 chunk-only, McNemar p=0.58, not significant) |
+| recall@1 | 0.554 | 0.515 | -3.9pp |
+| recall@100 | 0.938 | 0.931 | -0.7pp |
+| ndcg@10 | 0.671 | 0.643 | -2.7pp |
+| mrr | 0.637 | 0.605 | -3.2pp |
+
+By style: lexical unchanged (120/138 both), paraphrased 101 -> 97 (p=0.50). Rank shifts among the
+254 queries both indexes answer: 61 worse on chunks, 48 better, 145 unchanged, mean +1.9 positions.
+Same pattern as the identifier failure case: **merging pushes the gold a rank or two down**, which
+barely touches recall@10/100 but costs recall@1 and MRR a few points. `PROJECT_PLAN.md` M6 sizes
+this properly once the set is finished and un-defective.
+
 **Verification pass, 2026-09-06.** Everything above was re-checked before any more budget was
 spent on it. What was confirmed:
 
@@ -696,6 +718,112 @@ share of a query's distinct tokens present in its gold document):
 
 De-lexicalization moves this set to roughly SciFact's genre and does not reach NFCorpus's. That is
 the honest position of the set on the bias axis, and it belongs on any row read out of it.
+
+### Phase D: the chunk-granular BM25 index (2026-09-06)
+
+The BM25 index is now built over `common.corpus_text.Chunk`s from the phase D structure-aware JATS
+chunker (`retrieval/chunker.py`: merge consecutive paragraphs sharing a section and `<sec>` title
+up to a 350-token target, never across a boundary, no intra-paragraph split, boilerplate sections
+dropped), not raw paragraphs. **193,059 chunks** from 7,863 articles, down from 344,900 raw
+paragraphs; average chunk length 206.7 tokens. `retrieval/bm25.py` also replaced its full scan
+with a postings list (interleaved `array('i')` of `(chunk_idx, tf)`), per `DECISION_LOG.md` "BM25
+search is a full scan".
+
+| Property | before (raw paragraphs, full scan) | after (chunks, postings) |
+|---|---|---|
+| records indexed | 344,900 | 193,059 |
+| pickle load time | ~12.5s | **1.6s** |
+| search, top_k=100 | ~2,400 ms/query | **~450 ms/query** |
+| peak RSS at search | ~1.7 GB | **~1.2 GB** |
+
+Retrieval behaviour is unchanged: **SciFact nDCG@10 0.5979 / recall@100 0.8246 and NFCorpus
+nDCG@10 0.2880 / recall@100 0.2202 reproduce the committed figures to four decimals** (the
+postings-list gate; the other gate, `test_bm25.py`'s postings-vs-brute-force check on random
+indices, also passes). The 450 ms/query still exceeds nothing in the task contract on its own
+(1.5s TTFT), where the full scan's 2.4s did not.
+
+### Phase D: BM25 on the exact-identifier failure case (INTERIM, labels unreviewed)
+
+15 paired cases (`eval/data/identifier_cases.jsonl`), each a gold corpus paragraph naming a
+variant in one notation, with two keyword queries `"{gene} {form} variant"`: `matched` uses the
+notation the paragraph contains, `mismatched` an equivalent notation it never contains (rsID for
+HGVS, protein-level for cDNA, legacy name for current). Prediction and full analysis in
+`DECISION_LOG.md`, "BM25 on the exact-identifier failure case".
+
+**v2, keyword stem (2026-09-07, current):**
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-07 | phase D | identifier | `retrieval/recall@10` (matched notation) | 0.933 | [0.702, 0.988] | 15 | `cfg-90d5a23fbcde` | `7f494ed`+ | Wilson CI; 14/15. BM25 finds a matched-notation identifier, as M3 predicts |
+| 2026-09-07 | phase D | identifier | `retrieval/recall@10` (mismatched notation) | 0.067 | [0.012, 0.298] | 15 | `cfg-90d5a23fbcde` | `7f494ed`+ | Wilson CI; **1/15**. The one hit is `GJB2 rs80338939 variant`: GJB2 is corpus-rare so the gene token alone found it. Mismatched notation is otherwise inert |
+
+**Paired:** delta +0.867, discordant 13 matched-only / 0 mismatched-only, **McNemar exact
+p = 0.0002**. By axis, matched recall was 1.00 (cDNA<->cDNA), 0.83 (cDNA<->protein), 1.00
+(cDNA<->rsID).
+
+**Chunk-dilution, structure-aware vs paragraph-granular index, same v2 cases, paired on matched:**
+
+| index | matched recall@10 | matched hits |
+|---|---|---|
+| structure-aware (merged chunks) | 0.933 | 14/15 |
+| paragraph (identity chunker) | 1.000 | 15/15 |
+
+1 discordant (paragraph-only), 0 the other way, McNemar p = 1.000 (not significant at n=15). But
+5 of 15 matched cases ranked worse on the merged index and 0 ranked better: merging costs a
+rare-token query a few rank positions (PIK3CA `c.1624G>A` rank 5 -> 14 is the one that crossed
+k=10). `PROJECT_PLAN.md` M6 carries this: size it on the n>=300 set.
+
+**v1, sentence stem (2026-09-06, superseded):** matched 0.400 [0.198, 0.643] 6/15, mismatched
+0.000 [0.000, 0.204] 0/15, McNemar p=0.031, config `cfg-87de12b65498`. The matched 0.40 was a
+stem artifact: the filler words ("literature", "report") in the sentence stem matched unrelated
+review chunks harder than the one rare-identifier hit. Token frequency was checked and was **not**
+the cause. Kept for the trail; the v2 rows are the current numbers.
+
+**Still INTERIM.** n=15, labels not yet human-reviewed (this project's unreviewed-label base rate
+is ~50% wrong). The clean, robust result across both stems and both indexes: **a mismatched
+notation of the same variant does not retrieve its paragraph.**
+
+---
+
+### Phase E, retrieval-only: `service/search.py`'s stub replaced, first HTTP-path number (2026-09-08)
+
+`service/search.py`'s Step 0c stub (title-prefilter + per-candidate XML scan) replaced by real BM25
+over the phase D structure-aware chunk index, built once at startup (193,059 chunks, ~60s) and
+searched per request; streaming NDJSON interface and request logging unchanged. Traced
+(`common/trace.py`): every request emits a `retrieve` span. **No generation yet** (deliberately
+separate, so this number isolates the retrieval stage; see `DECISION_LOG.md`, "v4 plan audit",
+"lean v1"). Real HTTP path, not a notebook loop, per `PROJECT_PLAN.md` Step 0c / Phase E.
+
+| Date | Module | Eval set | Metric | Value | 95% CI | n | Config hash | Git SHA | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-08 | phase E | service (retrieval-only) | `service/latency_p50_ms` | 2459.3 | n/a | 150 | n/a | `pending`* | concurrency 20, 10 rotating sample queries, real HTTP |
+| 2026-09-08 | phase E | service (retrieval-only) | `service/latency_p95_ms` | 2988.0 | [2924.4, 2990.1] | 150 | n/a | `pending`* | percentile bootstrap CI, seed 0 |
+| 2026-09-08 | phase E | service (retrieval-only) | `service/ttft_p50_ms` | 2208.3 | n/a | 150 | n/a | `pending`* | |
+| 2026-09-08 | phase E | service (retrieval-only) | `service/ttft_p95_ms` | 2799.7 | [2661.1, 2815.5] | 150 | n/a | `pending`* | **exceeds the task contract's 1.5s TTFT target** |
+| 2026-09-08 | phase E | service (retrieval-only) | `service/single_query_retrieve_ms` | 342.9 | n/a | 1 | n/a | `pending`* | one warm request, no concurrency; `common/trace.py`'s `retrieve` span duration |
+
+*Git SHA pending: this run was against an uncommitted working tree (phase D+E code); update once
+committed, per the `b40d84e` precedent above (a SHA resolving to the wrong code is worse than
+`pending`). No config hash yet: the service doesn't call `common.run_meta.append_run`, unlike the
+eval harness; worth adding once generation lands and there is a real pipeline config to hash.
+
+**The headline finding: retrieval alone already misses the TTFT target under concurrency, and it
+is not the retrieval algorithm's fault.** A single warm request retrieves in 343ms, comfortably
+under the 1.5s budget, matching phase D's bench number (~0.45s/query). At concurrency 20 that
+becomes a **2.8s p95 TTFT**, an 8x blowup. BM25 search here is pure-Python, CPU-bound work
+(scoring postings), and uvicorn's default sync-route threadpool cannot run CPU-bound Python
+concurrently across threads: the GIL serializes it, so 20 concurrent searches queue rather than
+overlap, and per-request latency scales with how many requests are already in flight ahead of it.
+This is a concurrency-model finding, not a BM25 quality finding: **the retrieval algorithm meets
+the target; the current single-process serving model does not.** The standard fix (multiple
+worker processes, `uvicorn --workers N`, each with its own index and GIL) is M10/M12 territory
+(latency and cost engineering, then Kubernetes), not something to bolt on here; recorded now
+because Phase E is explicitly "where the task contract's latency and cost targets stop being
+hypotheses" and this is the first time they've been checked under load.
+
+**Not yet measured: the full pipeline.** Generation (an LLM call per query) is Phase E's next
+piece. It will add real latency and the first non-zero per-query cost; the 6s p95 / $0.05 targets
+from `TASK_CONTRACT.md` apply to that number, not this retrieval-only one.
 
 
 ---
