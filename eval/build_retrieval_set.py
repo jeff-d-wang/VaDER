@@ -56,7 +56,7 @@ MANIFEST = EVAL_DIR.parent / "corpus" / "manifest.csv"
 HELD_OUT = EVAL_DIR / "held_out" / "held_out_pmcids.csv"
 DEFAULT_OUT = EVAL_DIR / "data" / "retrieval_cases.jsonl"
 
-PROMPT_VERSION = "retrieval_qgen_v3"
+PROMPT_VERSION = "retrieval_qgen_v4"
 # The free tier caps this key at 8,000 tokens per minute, and the default
 # spends 730 of them per call on reasoning tokens for a task that is copying
 # anchors out of a paragraph and writing two sentences. At "low" a call costs
@@ -190,6 +190,12 @@ Rules, both queries must obey:
 - **The query must NOT contain its own answer.** Ask for the finding; do not state it. Write
   "How many amplicons covered the target region?", never "How many amplicons covered the target
   region, specifically 1663 amplicons?"
+- **Name the real subject. Never stand in for it with "this study", "the study", "the paper",
+  "the authors", or similar.** Use an anchor (the gene, variant, cohort, assay, disease) instead.
+  "What FDR threshold did the authors use?" is answered just as well by any paper's methods
+  section; "What FDR threshold did the TCGA-BRCA exome analysis use?" is not. If the paragraph
+  gives you nothing more specific than "the study" to call its subject, treat it as if it
+  answers nothing: return "answer_quote": "" and write no queries.
 
 Paragraph:
 \"\"\"{paragraph}\"\"\"
