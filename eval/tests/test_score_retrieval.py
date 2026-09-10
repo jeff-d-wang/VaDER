@@ -11,18 +11,22 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from common.corpus_text import Chunk
 from eval.score_retrieval import (GOLD_ID, by_overlap, by_stratum, check_index_covers_gold,
                                   hit_at, measure_holes, paired_style_test, rank_of_gold,
                                   sample_one_query_per_paragraph, to_query_result)
-from retrieval.bm25 import Paragraph, index_from_paragraphs
+from retrieval.bm25 import index_from_chunks
 from retrieval.ir_metrics import recall_at_k, reciprocal_rank
 
 GOLD = {"pmcid": "PMC1", "section": "body", "char_start": 100, "char_end": 200}
 CASE = {"query_id": "q1", "gold_span": GOLD}
 
 
-def para(pmcid="PMC1", section="body", start=100, end=200):
-    return Paragraph(pmcid, section, start, end, "text")
+def para(pmcid="PMC1", section="body", start=100, end=200, text="text"):
+    """A single-span chunk, the identity-chunker shape. Named `para` because
+    every span here is one paragraph."""
+    return Chunk(chunk_id=f"{pmcid}:{section}:{start}-{end}", pmcid=pmcid, text=text,
+                 source_spans=[{"section": section, "char_start": start, "char_end": end}])
 
 
 class TestToQueryResult(unittest.TestCase):
@@ -139,18 +143,18 @@ class TestIndexCoversGold(unittest.TestCase):
     the retriever."""
 
     def test_present_gold_is_not_reported_missing(self):
-        index = index_from_paragraphs([para(), para(pmcid="PMC9")])
+        index = index_from_chunks([para(), para(pmcid="PMC9")])
         self.assertEqual(check_index_covers_gold([CASE], index), 0)
 
     def test_absent_gold_is_counted(self):
-        index = index_from_paragraphs([para(pmcid="PMC9")])
+        index = index_from_chunks([para(pmcid="PMC9")])
         self.assertEqual(check_index_covers_gold([CASE], index), 1)
 
     def test_a_fragment_of_the_gold_paragraph_does_not_count_as_covering_it(self):
         """The exact failure: an index of sentence fragments overlaps every
         gold span, so span-overlap scoring produces plausible numbers off it.
         The key match is deliberately exact so that cannot pass."""
-        index = index_from_paragraphs([para(start=100, end=140), para(start=141, end=200)])
+        index = index_from_chunks([para(start=100, end=140), para(start=141, end=200)])
         self.assertEqual(check_index_covers_gold([CASE], index), 1)
 
 
@@ -183,9 +187,9 @@ class TestMeasureHoles(unittest.TestCase):
     stub before it is run for real rather than after."""
 
     def setUp(self):
-        self.gold = Paragraph("PMC1", "body", 100, 200, "the gold paragraph text")
-        self.other = Paragraph("PMC9", "body", 0, 50, "a different paragraph")
-        self.index = index_from_paragraphs([self.gold, self.other])
+        self.gold = para(start=100, end=200, text="the gold paragraph text")
+        self.other = para(pmcid="PMC9", start=0, end=50, text="a different paragraph")
+        self.index = index_from_chunks([self.gold, self.other])
         self.cases = [{"query_id": "p1#lexical", "paragraph_id": "p1", "style": "lexical",
                        "query": "a query", "gold_span": GOLD}]
         self.results = {"p1#lexical": to_query_result(self.cases[0], [self.other, self.gold])}
@@ -211,7 +215,7 @@ class TestMeasureHoles(unittest.TestCase):
         self.assertIn(self.other.text, call.call_args.args[0])
 
     def test_a_query_whose_gold_is_missing_from_the_index_is_skipped(self):
-        index = index_from_paragraphs([self.other])
+        index = index_from_chunks([self.other])
         with mock.patch("eval.score_retrieval.groq_chat_json") as call:
             out = measure_holes(self.cases, self.results, index, 10, 5, "m", 0)
         self.assertEqual(out["n"], 0, "no gold text means nothing to compare against")

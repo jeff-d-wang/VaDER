@@ -101,13 +101,18 @@ def check(rows: list[dict], xml_dir: Path) -> tuple[list[str], list[str]]:
                             f"{stored_digest}; the corpus changed under this row")
             continue
 
+        # Anchors must still be real text from the paragraph. They are NOT checked against
+        # the queries here: that was v1/v2's design (anchors held verbatim in both queries,
+        # so the lexical-vs-paraphrased contrast measured prose wording only), and it is not
+        # v3's. v3 dropped the anchor-echo rule deliberately (see docs/DECISION_LOG.md,
+        # "does a generic query score well, and what replaced anchors as the specificity
+        # check"): anchors are metadata pruned to those genuinely in the paragraph, and
+        # nothing requires a query to repeat them. Checking for it here would fail every v3
+        # row on a rule the generator was never asked to follow.
         norm_text = normalize(text)
         for anchor in row["anchors"]:
             if normalize(anchor) not in norm_text:
                 failures.append(f"{pid}: anchor {anchor!r} is no longer in the gold paragraph")
-            for style, r in styles.items():
-                if normalize(anchor) not in normalize(r["query"]):
-                    failures.append(f"{pid}: {style} query has lost anchor {anchor!r}")
 
         for style, r in styles.items():
             recomputed = round(lexical_overlap(r["query"], text), 4)

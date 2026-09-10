@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "dataset": "nfcorpus",
+    "n_docs": 3633,
+    "n_queries": 323,
+    "top_k": 100,
+    "index_build_s": 0.3,
+    "search_s": 0.3,
+    "search_ms_per_query": 1.0
+  },
+  "metrics": {
+    "recall@5": {
+      "value": 0.1092,
+      "ci95": [
+        0.0874,
+        0.1328
+      ],
+      "n": 323,
+      "reference": null
+    },
+    "recall@10": {
+      "value": 0.1345,
+      "ci95": [
+        0.1105,
+        0.1599
+      ],
+      "n": 323,
+      "reference": null
+    },
+    "recall@100": {
+      "value": 0.2202,
+      "ci95": [
+        0.1923,
+        0.2496
+      ],
+      "n": 323,
+      "reference": 0.25
+    },
+    "ndcg@10": {
+      "value": 0.288,
+      "ci95": [
+        0.2551,
+        0.3211
+      ],
+      "n": 323,
+      "reference": 0.325
+    },
+    "mrr": {
+      "value": 0.5047,
+      "ci95": [
+        0.4542,
+        0.5542
+      ],
+      "n": 323,
+      "reference": null
+    }
+  }
+}

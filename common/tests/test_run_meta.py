@@ -36,10 +36,12 @@ class AppendRunTest(unittest.TestCase):
     def test_writes_one_row_with_both_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = Path(tmp) / "run_registry.jsonl"
+            result = Path(tmp) / "result.json"
+            result.write_text("{}")
             run_config = {"retriever": "bm25", "top_k": 10}
             run_id = run_meta.append_run(
                 eval_set="retrieval", run_config=run_config,
-                results_path="eval/runs/x.json", metrics={"recall@10": 0.8}, registry=reg)
+                results_path=str(result), metrics={"recall@10": 0.8}, registry=reg)
             rows = [json.loads(x) for x in reg.read_text().splitlines()]
             self.assertEqual(len(rows), 1)
             row = rows[0]
@@ -49,13 +51,19 @@ class AppendRunTest(unittest.TestCase):
             self.assertEqual(row["pipeline_config_hash"],
                              run_meta.config_hash(run_meta.load_config()))
             self.assertEqual(row["metrics"], {"recall@10": 0.8})
+            self.assertEqual(Path(row["artifact_path"]).read_text(), "{}")
+            result.write_text("overwritten later")
+            self.assertEqual(Path(row["artifact_path"]).read_text(), "{}")
+            self.assertEqual(row["results_sha256"], run_meta.file_hash(Path(row["artifact_path"])))
 
     def test_appends_rather_than_overwrites(self):
         with tempfile.TemporaryDirectory() as tmp:
             reg = Path(tmp) / "run_registry.jsonl"
+            result = Path(tmp) / "result.json"
+            result.write_text("{}")
             for _ in range(3):
                 run_meta.append_run(eval_set="answer", run_config={"a": 1},
-                                    results_path="p", metrics={}, registry=reg)
+                                    results_path=str(result), metrics={}, registry=reg)
             self.assertEqual(len(reg.read_text().splitlines()), 3)
 
 

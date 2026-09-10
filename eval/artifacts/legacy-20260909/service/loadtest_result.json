@@ -1,0 +1,22 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "n": 150,
+  "concurrency": 20,
+  "seed": 0,
+  "wall_clock_s": 3.38,
+  "n_ok": 150,
+  "n_errors": 0,
+  "throughput_rps": 44.34,
+  "latency_p50_ms": 430.5,
+  "latency_p95_ms": 557.4,
+  "latency_p95_ci95": [
+    532.9,
+    583.0
+  ],
+  "ttft_p50_ms": 172.7,
+  "ttft_p95_ms": 281.8,
+  "ttft_p95_ci95": [
+    254.3,
+    312.5
+  ]
+}

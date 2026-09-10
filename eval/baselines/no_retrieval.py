@@ -30,7 +30,7 @@ from pathlib import Path
 
 from eval.baselines._runner import (NO_CONTEXT_PROMPT, answer_from, load_cases,
                                     write_run)
-from eval.llm_client import DEFAULT_MODEL, groq_chat_json
+from common.llm_client import DEFAULT_MODEL, groq_chat_json
 
 PROMPT_VERSION = "no_retrieval_v2"
 

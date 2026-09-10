@@ -283,6 +283,10 @@ def render_worksheet(cases: list[dict], xml_dir: Path, seed: int) -> str:
         "**You are not grading a system answer here.** There is no system answer in this file. "
         "You are checking the ruler, not the measurement.",
         "",
+        "**A bare number sitting alone in a span's text, often on its own line, is a citation "
+        "marker** (JATS renders `<xref ref-type=\"bibr\">` inline with no separator, e.g. "
+        "\"were poor.\\n5\\nCCAs can be...\"), not a reported figure.",
+        "",
         "Fill in the two `___` lines at the end of each case, then run:",
         "",
         "```",

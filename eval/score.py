@@ -117,6 +117,9 @@ def score_groundedness(answer: SystemAnswer, judge: Judge, xml_dir: Path) -> Pro
     supported = 0
     problems = []
     for claim in answer.claims:
+        if not claim.cited_pmcid or not claim.cited_section:
+            problems.append("invalid citation")
+            continue
         span_text, err = load_span_text(
             xml_dir, claim.cited_pmcid, claim.cited_section,
             claim.cited_char_start, claim.cited_char_end,
@@ -244,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", default=str(CASES_PATH))
     parser.add_argument("--xml-dir", default=str(XML_DIR))
     parser.add_argument("--out", help="write full per-case results as JSON here")
+    parser.add_argument("--exploratory", action="store_true",
+                        help="allow unreviewed cases and missing answers; not release evidence")
     parser.add_argument("--held-out", choices=["exclude", "include", "only"], default="exclude",
                          help="exclude (default, safe): dev split only. include/only: also or "
                               "only score the held-out split, requires --touch-reason and is "
@@ -275,6 +280,13 @@ def main(argv: list[str] | None = None) -> int:
               f"this is touch #{n_touches}.{warn}\n", file=sys.stderr)
 
     missing = set(cases) - set(answers)
+    rejected = [cid for cid, case in cases.items() if case.get("validation_verdict") == "wrong"]
+    unreviewed = [cid for cid, case in cases.items() if not case.get("validated_by")]
+    if rejected or (not args.exploratory and (missing or unreviewed)):
+        print(f"Refusing release scoring: rejected={len(rejected)}, unreviewed={len(unreviewed)}, "
+              f"missing answers={len(missing)}. Review cases or use --exploratory for unreviewed inputs.",
+              file=sys.stderr)
+        return 2
     if missing:
         print(f"WARNING: {len(missing)} case(s) have no system answer, skipped: {sorted(missing)[:5]}...",
               file=sys.stderr)
@@ -304,8 +316,16 @@ def main(argv: list[str] | None = None) -> int:
               f"not against zero.")
 
     if args.out:
-        payload = {"summary": summary, "cases": [asdict(s) for s in scores]}
+        from common.run_meta import append_run, file_hash
+        payload = {"summary": summary, "cases": [asdict(s) for s in scores],
+                   "exploratory": args.exploratory, "judge": args.judge,
+                   "expected_cases": len(cases), "missing_answers": sorted(missing)}
         Path(args.out).write_text(json.dumps(payload, indent=2))
+        append_run(eval_set="answer_scores", results_path=args.out, metrics=summary,
+                   run_config={"judge": args.judge, "exploratory": args.exploratory,
+                               "cases_sha256": file_hash(Path(args.cases)),
+                               "answers_sha256": file_hash(Path(args.answers))},
+                   input_paths={"cases": Path(args.cases), "answers": Path(args.answers)})
         print(f"\nWrote {args.out}")
 
     return 0

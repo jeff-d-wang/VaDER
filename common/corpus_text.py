@@ -18,18 +18,13 @@ it points at.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 from xml.etree import ElementTree as ET
 
 SECTION_TAGS = {"abstract": "abstract", "body": "body"}
-
-
-@dataclass
-class ParseError:
-    pmcid: str
-    reason: str
 
 
 def _paragraph_items(node: ET.Element) -> list[tuple[str, ET.Element | None]]:
@@ -67,6 +62,121 @@ def _enclosing_sec_title(element: ET.Element | None,
                     return text
         current = parents.get(current)
     return None
+
+
+# Every dash shape actually found in the corpus's citation ranges/lists
+# ("2-4", "21‑94", "19−21"), plus comma/semicolon and whitespace:
+# the punctuation a citation list is built from, never real prose.
+_SEP = r",;\-‐‑‒–—−\s"
+_SUP_NOTATION_RE = re.compile(rf"^[{_SEP}\[\]()]*$")
+
+
+def _is_citation_marker(el: ET.Element) -> bool:
+    """A JATS bibliographic reference marker: a bare `<xref ref-type="bibr">`,
+    or a `<sup>` whose only element children are such xrefs (a superscript
+    citation group like "2-4", where the dash is a text node between two
+    xrefs, one sometimes empty) AND whose own text and every child's tail
+    (both, still inside the closing `</sup>`) are nothing but that
+    connector punctuation. Found by inspecting the real corpus: 7,402 of
+    7,863 articles carry `ref-type="bibr"`, and it renders inline as bare
+    digits with no separator from real prose ("were poor.\\n5\\nCCAs can
+    be..."), which a person skimming a worksheet, or a model asked what a
+    paragraph reports, can misread as data.
+
+    A sampled 800 articles show the bare-xref shape (a `[1, 2]` or `(3-5)`
+    citation list, not wrapped in `<sup>`) outnumbers the `<sup>`-wrapped
+    shape 607 files to 153. `_visible_text`/`_strip_citation_sentinels`
+    below is what makes the bare shape's surrounding `[...]`/`(...)` also
+    disappear, not just the digits.
+
+    The connector-only requirement exists because a `<sup>` can also carry
+    a real label alongside its citation, not just citation notation --
+    found in the real corpus: `<sup>mut<xref ref-type="bibr">37</xref></sup>`
+    (BRCA1mut, a mutation-status label) and `<sup>Revertant
+    <xref ref-type="bibr">24</xref></sup>` (a cell-line name). Treating the
+    whole `<sup>` as one droppable unit there would silently delete
+    "mut"/"Revertant" along with the citation -- a meaning-changing loss in
+    exactly the variant-status text this project cares about, not a
+    citation cleanup. When the check fails, the `<sup>` is not a marker as
+    a whole; `_visible_text` then walks into it normally, and its `<xref>`
+    child is still recognized and stripped on its own -- only the real text
+    is spared, not the citation number."""
+    if el.tag == "xref":
+        return el.get("ref-type") == "bibr"
+    if el.tag == "sup":
+        xrefs = list(el)
+        if not xrefs or not all(c.tag == "xref" and c.get("ref-type") == "bibr" for c in xrefs):
+            return False
+        return all(t is None or _SUP_NOTATION_RE.match(t)
+                   for t in [el.text] + [c.tail for c in xrefs])
+    return False
+
+
+_CITATION_SENTINEL = "\x00"
+# A `[...]`/`(...)` that holds nothing but sentinels and connector
+# punctuation (comma, dash, whitespace) is citation apparatus, not prose --
+# e.g. "[1, 2]" or "(3-5)" -- so the bracket goes too, not just the digits.
+# The lookahead requires at least one sentinel inside; a bracket with no
+# sentinel ("[30S]") or a mix of a sentinel and real words ("[see ref 3]")
+# is left alone.
+_BRACKETED_MARKER_RE = re.compile(
+    rf"\[(?=[{_SEP}{_CITATION_SENTINEL}]*{_CITATION_SENTINEL})[{_SEP}{_CITATION_SENTINEL}]*\]")
+_PARENED_MARKER_RE = re.compile(
+    rf"\((?=[{_SEP}{_CITATION_SENTINEL}]*{_CITATION_SENTINEL})[{_SEP}{_CITATION_SENTINEL}]*\)")
+# A sentinel with no enclosing bracket (the plain <sup> case, or a bare
+# xref with no delimiter at all): collapse it and its connector punctuation
+# to one space.
+_BARE_MARKER_RUN_RE = re.compile(rf"[{_SEP}{_CITATION_SENTINEL}]*{_CITATION_SENTINEL}[{_SEP}{_CITATION_SENTINEL}]*")
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,;:])")
+
+
+def _visible_text(el: ET.Element) -> str:
+    """Like `"".join(el.itertext())`, but a citation marker's own subtree is
+    replaced with a sentinel (not just dropped) while its `.tail` (the real
+    prose immediately after it, an ElementTree element's tail belongs to its
+    parent, not to the element) is kept. The sentinel is what lets
+    `_strip_citation_sentinels` find and remove an enclosing delimiter that
+    belongs to the citation, not the prose."""
+    parts = [el.text or ""]
+    for child in el:
+        if _is_citation_marker(child):
+            parts.append(_CITATION_SENTINEL)
+        else:
+            parts.append(_visible_text(child))
+        parts.append(child.tail or "")
+    return "".join(parts)
+
+
+def _strip_citation_sentinels(text: str) -> str:
+    """Second pass over `_visible_text`'s output: remove each citation
+    sentinel, and with it a `[...]`/`(...)` that turns out to hold nothing
+    but sentinels and connector punctuation, since that bracket is part of
+    the citation, not the prose it interrupts."""
+    text = _BRACKETED_MARKER_RE.sub("", text)
+    text = _PARENED_MARKER_RE.sub("", text)
+    text = _BARE_MARKER_RUN_RE.sub(" ", text)
+    text = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", text)
+    return " ".join(text.split())
+
+
+def clean_paragraph_texts(root: ET.Element, section: str) -> list[str]:
+    """Each paragraph's text with citation-marker superscripts stripped and
+    whitespace collapsed to single spaces, aligned index for index with
+    `iter_paragraphs_from_root`'s yields for the same (root, section).
+
+    **Presentation-only.** Never used to compute an offset, and no stored
+    `char_start`/`char_end`/`gold_text_sha1` is read from or checked against
+    it: standing rule 5's provenance is unaffected by anything this function
+    does. It exists for the two places raw paragraph text reaches a reader
+    who is not resolving a span: an LLM asked to write a query or answer
+    about a paragraph, and a human worksheet. Both can otherwise treat a
+    bibliographic marker as if it were a reported finding."""
+    tag = SECTION_TAGS.get(section)
+    node = root.find(f".//{tag}") if tag else None
+    if node is None:
+        return []
+    return [_strip_citation_sentinels(_visible_text(p)) if p is not None else " ".join(text.split())
+            for text, p in _paragraph_items(node)]
 
 
 def section_titles_from_root(root: ET.Element, section: str) -> list[str | None]:
@@ -239,6 +349,17 @@ class Chunk:
     pmcid: str
     text: str
     source_spans: list[dict]  # each: {"section", "char_start", "char_end"}
+
+    def span(self) -> dict:
+        """One (pmcid, section, char_start, char_end) covering all source
+        spans, for a consumer that needs a single citation span rather than
+        the list: the earliest start to the latest end, in the first span's
+        section. Only meaningful when every source span is in one section,
+        which the phase D chunker guarantees (it never merges across a
+        section boundary)."""
+        return {"pmcid": self.pmcid, "section": self.source_spans[0]["section"],
+                "char_start": min(s["char_start"] for s in self.source_spans),
+                "char_end": max(s["char_end"] for s in self.source_spans)}
 
 
 def chunk_hits_span(chunk: Chunk, gold: dict) -> bool:

@@ -1,0 +1,357 @@
+{
+  "summary": {
+    "direction": {
+      "n": 8,
+      "pass": 5,
+      "partial": 0,
+      "fail": 3,
+      "pass_rate": 0.625,
+      "pass_rate_ci95": [
+        0.306,
+        0.863
+      ]
+    },
+    "strength": {
+      "n": 8,
+      "pass": 2,
+      "partial": 2,
+      "fail": 4,
+      "pass_rate": 0.25,
+      "pass_rate_ci95": [
+        0.071,
+        0.591
+      ]
+    },
+    "groundedness": {
+      "n": 10,
+      "pass": 7,
+      "partial": 0,
+      "fail": 3,
+      "pass_rate": 0.7,
+      "pass_rate_ci95": [
+        0.397,
+        0.892
+      ]
+    },
+    "disagreement": {
+      "n": 3,
+      "pass": 2,
+      "partial": 0,
+      "fail": 1,
+      "pass_rate": 0.667,
+      "pass_rate_ci95": [
+        0.208,
+        0.939
+      ]
+    },
+    "not_found": {
+      "n": 12,
+      "pass": 11,
+      "partial": 0,
+      "fail": 1,
+      "pass_rate": 0.917,
+      "pass_rate_ci95": [
+        0.646,
+        0.985
+      ]
+    }
+  },
+  "cases": [
+    {
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "pass",
+        "rationale": "direction matches (mixed)",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "pass",
+        "rationale": "strength matches (disputed)",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "fail",
+        "rationale": "1/2 claims grounded (50%)",
+        "note": ""
+      },
+      "disagreement": {
+        "verdict": "pass",
+        "rationale": "The answer explicitly notes conflicting evidence, citing worse outcomes in earlier studies and no difference in a recent meta\u2011analysis, matching the known disagreement.",
+        "note": ""
+      },
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "atm_c7570g_c_risk_class_disagree_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "pass",
+        "rationale": "direction matches (increased)",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "fail",
+        "rationale": "strength high does not match gold disputed",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "2/2 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": {
+        "verdict": "fail",
+        "rationale": "The answer only presents the high\u2011risk view and does not mention the conflicting moderate\u2011risk source.",
+        "note": ""
+      },
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "atm_variants_controversy_disagree_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "fail",
+        "rationale": "direction increased does not match gold mixed",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "fail",
+        "rationale": "strength disputed does not match gold unstated",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "3/3 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": {
+        "verdict": "pass",
+        "rationale": "The answer explicitly notes contradictory findings in the literature, reflecting the known disagreement about ATM heterozygosity and breast cancer risk.",
+        "note": ""
+      },
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "palb2_breast_risk_ord_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "pass",
+        "rationale": "direction matches (increased)",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "partial",
+        "rationale": "strength moderate is one tier from gold high",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "2/2 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "tp53_chondrosarcoma_survival_ord_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "fail",
+        "rationale": "direction none does not match gold increased",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "fail",
+        "rationale": "strength none does not match gold unstated",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "1/1 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "fail",
+        "rationale": "system wrongly refused; corpus does have grounding",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "pass",
+        "rationale": "direction matches (increased)",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "pass",
+        "rationale": "strength matches (moderate)",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "fail",
+        "rationale": "0/3 claims grounded (0%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "pass",
+        "rationale": "direction matches (increased)",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "fail",
+        "rationale": "strength high does not match gold unstated",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "2/2 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "stratum": "evidence",
+      "direction": {
+        "verdict": "fail",
+        "rationale": "direction mixed does not match gold increased",
+        "note": ""
+      },
+      "strength": {
+        "verdict": "partial",
+        "rationale": "strength moderate is one tier from gold high",
+        "note": ""
+      },
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "3/3 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system correctly did not refuse",
+        "note": "extended_check"
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "brca1_c4484plus2t_c_prostate_neg_001",
+      "stratum": "evidence",
+      "direction": null,
+      "strength": null,
+      "groundedness": {
+        "verdict": "fail",
+        "rationale": "1/2 claims grounded (50%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system said not-found",
+        "note": ""
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "brca2_c9275a_g_ovarian_neg_001",
+      "stratum": "evidence",
+      "direction": null,
+      "strength": null,
+      "groundedness": null,
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system said not-found",
+        "note": ""
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "atm_c2502_2503insa_endometrial_neg_001",
+      "stratum": "evidence",
+      "direction": null,
+      "strength": null,
+      "groundedness": null,
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system said not-found",
+        "note": ""
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    },
+    {
+      "case_id": "atm_c4777minus1g_c_pancreatic_neg_001",
+      "stratum": "evidence",
+      "direction": null,
+      "strength": null,
+      "groundedness": {
+        "verdict": "pass",
+        "rationale": "1/1 claims grounded (100%)",
+        "note": ""
+      },
+      "disagreement": null,
+      "not_found": {
+        "verdict": "pass",
+        "rationale": "system said not-found",
+        "note": ""
+      },
+      "parameter_accuracy": null,
+      "citation": null
+    }
+  ]
+}

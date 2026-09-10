@@ -1,3 +1,21 @@
+# Current evaluation commands and release policy
+
+The active plan is `docs/PROJECT_PLAN.md`; current blockers are `docs/CURRENT_STATUS.md`.
+Historical instructions below may describe earlier experiments. Use these release rules:
+
+- Select retrieval cases explicitly with `--cases`. A reviewed diagnostic subset is in
+  `eval/data/releases/retrieval-reviewed-20260909.jsonl`, with a checksummed manifest.
+- Rejected cases cannot be scored. Unreviewed cases require `--exploratory`.
+- Answer release scoring rejects missing answers. Exploratory output records its incomplete set.
+- Invalid citations remain unsupported claims in the denominator. This changes scorer behavior;
+  historical scores must not be relabeled as results from this scorer.
+- `common.run_meta.append_run` copies outputs to unique `eval/artifacts/` folders. Preserve those
+  and completed human worksheets. The historical snapshot is `eval/artifacts/legacy-20260909/`.
+- Build caches with `python -m retrieval.build_index --out eval/runs/index-new.pkl`.
+- These changes do not calibrate the judge, supply representative labels or fix clustered CIs.
+
+---
+
 # eval/
 
 The evaluation harness: the eval set, the scorer and its judge, the baselines, and the tooling
@@ -22,6 +40,7 @@ python -m unittest discover             # every test in the project
 | `find_coverage.py`, `hold_out_case.py`, `mine_rare_variants.py` | building cases |
 | `verify_spans.py`, `check_gold_claims.py`, `verify_negative_cases.py` | keeping answer cases honest |
 | `build_retrieval_set.py`, `score_retrieval.py`, `verify_retrieval_set.py` | the phase C retrieval set: build it, score a retriever on it, keep it honest |
+| `mine_notation_pairs.py`, `build_identifier_cases.py`, `score_identifier_cases.py` | phase D's exact-identifier failure case: mine same-variant notation pairs from the corpus, assemble paired matched/mismatched cases, score BM25 on them |
 | `make_case_worksheet.py` | putting cases in front of a human to validate |
 | `kappa.py` | judge calibration statistic |
 | `compare_runs.py` | paired McNemar between two scored runs |
@@ -265,23 +284,27 @@ python -m eval.baselines.no_retrieval --out runs/no_retrieval_answers.jsonl
 ### bm25.py: hand-built retrieval for the second baseline
 
 Okapi BM25 from scratch, no ranking library (see `docs/DECISION_LOG.md`, "BM25-only baseline,
-hand-built"). Indexes every abstract/body paragraph in the corpus with real
-`(pmcid, section, char_start, char_end)` provenance, same offset convention as `corpus_text.py`.
-Build once, reuse:
+hand-built"). As of phase D the index unit is a `common.corpus_text.Chunk` from
+`retrieval/chunker.py`, not a raw paragraph, and search is a postings scan, not a full scan (see
+`docs/DECISION_LOG.md`, "the phase D structure-aware JATS chunker" and "BM25 search is a full
+scan"). Each chunk carries `source_spans`, one `(section, char_start, char_end)` per merged
+paragraph, so a hit is still a real citable span. Build once, reuse:
 
 ```
 python -c "
 import csv
 from pathlib import Path
 from retrieval.bm25 import build_index
-pmcids = [r['pmcid'] for r in csv.DictReader(open('corpus/manifest.csv'))]
+pmcids = [r['pmcid'] for r in csv.DictReader(open('corpus/manifest.csv')) if r['status']=='ok']
 build_index(Path('corpus/xml'), pmcids).save(Path('eval/runs/bm25_index.pkl'))
 "
 ```
 
-Takes about 35 seconds over the full 7,863-article corpus (344,900 paragraphs), single-process. The
-resulting `.pkl` is about 575 MB, git-ignored under `eval/runs/`, rebuild rather than expect it to
-already exist.
+`build_index(xml_dir, pmcids, chunker=...)` defaults to the structure-aware chunker; pass
+`retrieval.chunker.paragraph_chunks` for a raw-paragraph (identity) index. About 50 seconds over
+the full 7,863-article corpus (193,059 chunks), single-process. The resulting `.pkl` is about
+490 MB, git-ignored under `eval/runs/`; loading it takes ~1.6s and a search is ~0.45s/query.
+Rebuild rather than expect it to already exist.
 
 **Rebuild it after any change to `common/corpus_text.py`, and do not trust one you did not build.**
 The index is a cache, and an audit of code does not reach a cache. The pickle in place until
@@ -619,6 +642,106 @@ for. The mechanical filters can prove an anchor came from the paragraph; they ca
 the query is one anyone would ask. Unreviewed agent-written labels have run about 50% defective
 twice in this project, so treat every number off this set as provisional until that sheet is
 filled in.
+
+### Finishing phase C: the runbook
+
+**Canonical set unchanged so far.** `data/retrieval_cases.jsonl` is still the 138-paragraph
+`retrieval_qgen_v1` set (55% defective on a 20-case review) that every `RESULTS.md` row scores
+against. A replacement draft is in progress at `eval/runs/retrieval_cases_v3.jsonl` and is **not**
+promoted yet.
+
+**State as of 2026-09-08.** Two worksheet reviews of `retrieval_qgen_v3` output (n=20, then n=50,
+mostly independent samples) put the defect rate at a stable **~30%** (6/20, then 15/47ish). Reading
+the actual wrong cases, not just the one-line reasons, found two distinct patterns and one prompt
+fix each so far:
+
+1. **Deictic subject** ("the study" / "the authors" instead of a real anchor). Fixed in
+   `retrieval_qgen_v4` (one prompt rule). **Still unvalidated**: of the 111 paragraphs in
+   `eval/runs/retrieval_cases_v3.jsonl`, only 3 are actually v4-stamped, so no batch has fairly
+   tested it yet.
+2. **Genericness** (9-10 of 15 in the second review, the dominant pattern): the anchors are real
+   and verbatim, but name a recurring category ("NOS score", "Addgene... p53 plasmids") many
+   similarly-shaped paragraphs share, rather than the paragraph's paper-unique details. Confirmed
+   this is not a `--df-table` gap: these queries pass `MAX_RAREST_TERM_DF` comfortably (df 51-420).
+   Fixed in `retrieval_qgen_v5`: `specificity_margin`, a mechanical check that searches a
+   paragraph-granular BM25 index and rejects a query whose gold paragraph doesn't decisively
+   outrank the best-scoring paragraph from a different article. Calibrated against both worksheets
+   before being wired in (`--calibrate-specificity`, no API calls): checked on both query styles it
+   was net-harmful (rejected half of known-valid rows, because the deliberately de-lexicalized
+   paraphrase style scores lower by construction); checked on the **lexical query only**, it
+   rejects 61% of known-wrong rows at a cost of 22% of known-valid ones. Full calibration story in
+   `docs/DECISION_LOG.md`, "specificity_margin, a BM25-margin check for the genericness defect".
+
+Two smaller patterns from the same review (paraphrase-quality failures, 3/15; a gap-statement
+tautology sub-shape, 1/15) are logged, not yet fixed, deliberately: bundling more prompt changes
+into this version would muddy attribution in the batch below, which exists to test v4 and v5's
+margin check together as one clean unit.
+
+**Next, once budget allows:** a fresh batch under v5, to its own file so a worksheet sample of it
+is 100% v5-generated, not diluted into the mixed v3/v4 draft the way the last one was:
+
+```
+python -m eval.build_retrieval_set --limit 30 --out eval/runs/retrieval_cases_v5.jsonl \
+    --df-table eval/runs/doc_freq_paragraph.json --para-index eval/runs/bm25_index_paragraph.pkl
+python -m eval.build_retrieval_set --worksheet 20 --out eval/runs/retrieval_cases_v5.jsonl \
+    --out-worksheet eval/retrieval_worksheet_v5.md
+python -m eval.make_case_worksheet --summarize eval/retrieval_worksheet_v5.md
+```
+
+Expect a lower acceptance rate than v3/v4's 74%: the margin check is designed to reject more.
+**Log a prediction and its minimum detectable effect in `docs/DECISION_LOG.md` before running the
+first command**, per the standing rule; the pooled ~31% baseline (n=67 reviewed paragraphs across
+both prior worksheets) is what a new rate should be compared against, and at n=20-30 the CI is wide
+enough that only a large effect is distinguishable from noise.
+
+Two artifacts are prepared so none of this needs re-deriving:
+
+- **`eval/runs/doc_freq_paragraph.json`** (11 MB, git-ignored): the `term -> document frequency`
+  table over the 344,900-paragraph corpus, for `--df-table`. The `MAX_RAREST_TERM_DF = 1000`
+  threshold is calibrated against that 344,900 denominator (0.3% of the corpus), so the df table
+  must be paragraph-granular, not built from the phase D chunk index.
+- **`eval/runs/bm25_index_paragraph.pkl`** (529 MB, git-ignored): the paragraph-granular BM25
+  index `--para-index` searches for `specificity_margin`. Rebuild both via
+  `retrieval.bm25.build_index(xml_dir, pmcids, chunker=retrieval.chunker.paragraph_chunks)` if
+  missing; same one-liner pattern as the chunk-granular `bm25_index.pkl` rebuild instructions
+  above, with `chunker=paragraph_chunks` added.
+- **The phase D chunk vs paragraph re-score** of the current 138 is in `docs/RESULTS.md`
+  ("Phase D re-score"): merging costs about 1.4pp recall@10 (not significant) and 3 to 4pp on
+  recall@1 / MRR. Score the finished set on both indexes the same way; that is the M6 chunking
+  ablation's first row.
+
+**`verify_retrieval_set.py` no longer checks that a query echoes its anchors verbatim.** That was
+v1/v2's design; v3 dropped it deliberately (anchors are metadata, not a constraint on the query
+text). The check was still live in the standing verifier and failed ~150 of the reviewed v3
+batch's 216 rows on a rule the generator was never asked to follow, which would have buried any
+real mechanical failure. Removed; "is the anchor still in the gold paragraph" (a real integrity
+check) stays.
+
+## The exact-identifier failure case (phase D)
+
+`data/identifier_cases.jsonl`, `PROJECT_PLAN.md` M3's "construct the failing case deliberately".
+An identifier (rsID, HGVS, legacy name) is an exact-match token: BM25 handles it when the query's
+notation matches the document's and is blind to it otherwise, since `rs80338939` and `c.35delG`
+share no tokens. Each case is a gold corpus paragraph naming a variant one way, plus two keyword
+queries `"{gene} {form} variant"`: `matched` uses the notation the paragraph contains,
+`mismatched` an equivalent notation it never contains. Paired, so the gap is a McNemar test on
+the same items. `present_min_token_df` (rarest corpus df among the present form's tokens) is
+stored per row.
+
+```
+python -m eval.mine_notation_pairs --pairs               # harvest "HGVS (rsID)" style equivalences the corpus writes out
+python -m eval.mine_notation_pairs --candidates eval/runs/notation_pairs.csv   # paragraphs with exactly one form
+python -m eval.build_identifier_cases                    # assemble data/identifier_cases.jsonl (reads eval/runs/bm25_index.pkl for doc_freq)
+python -m eval.score_identifier_cases --index eval/runs/bm25_index.pkl --out eval/runs/identifier_bm25.json
+```
+
+**Current run (v2, keyword stem, 2026-09-07) is INTERIM and unreviewed.** 15 cases; **matched
+recall@10 = 14/15 (0.933), mismatched = 1/15 (0.067)**, McNemar p=0.0002. The first run's
+sentence stem scored matched 6/15; that was a filler-word artifact, not token frequency (checked:
+every present form has a token in <= 25 chunks). Scored against a paragraph-granular index the
+matched arm is 15/15, so merging costs a rare-identifier query a few rank positions; carried to
+M6. Full analysis in `DECISION_LOG.md`, "BM25 on the exact-identifier failure case". `validated_by`
+on every row stays null until a person reads the cases.
 
 ## TODO: growing the answer set
 

@@ -25,9 +25,9 @@ import sys
 from pathlib import Path
 
 from common.trace import span, trace_request
-from eval.baselines._runner import (EXCERPT_PROMPT, answer_from, format_excerpts,
+from eval.baselines._runner import (CASES_PATH, EXCERPT_PROMPT, answer_from, format_excerpts,
                                     load_cases, map_claims, write_run)
-from eval.llm_client import DEFAULT_MODEL, groq_chat_json
+from common.llm_client import DEFAULT_MODEL, groq_chat_json
 from retrieval.bm25 import BM25Index
 
 PROMPT_VERSION = "bm25_only_v2"
@@ -51,9 +51,7 @@ def run(cases: list[dict], index: BM25Index, model: str, top_k: int) -> list[dic
                 })
                 continue
 
-            excerpts = [({"pmcid": para.pmcid, "section": para.section,
-                          "char_start": para.char_start, "char_end": para.char_end}, para.text)
-                        for para, _score in hits]
+            excerpts = [(chunk.span(), chunk.text) for chunk, _score in hits]
             out = groq_chat_json(
                 EXCERPT_PROMPT.format(query=case["query"], excerpts=format_excerpts(excerpts)),
                 model=model)
@@ -74,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Loaded: {index.n_docs} paragraphs.")
 
     answers = run(load_cases(), index, args.model, args.top_k)
-    write_run(Path(args.out), answers, args.model, PROMPT_VERSION, top_k=args.top_k)
+    write_run(Path(args.out), answers, args.model, PROMPT_VERSION, top_k=args.top_k,
+              input_paths={"cases": CASES_PATH, "index": Path(args.index)})
     return 0
 
 

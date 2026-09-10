@@ -107,11 +107,14 @@ class TestAnchors(VerifyCase):
             r["query"] += " 9,999 carriers"
         self.assertFailsWith(rows, "no longer in the gold paragraph")
 
-    def test_query_that_lost_an_anchor_is_caught(self):
+    def test_query_not_echoing_an_anchor_is_not_a_failure(self):
+        """v3 dropped the anchor-echo rule deliberately (anchors are metadata, not a
+        constraint on the query text), so this checker must not resurrect it. (The
+        rewritten query's now-stale lexical_overlap is still, correctly, its own failure;
+        this asserts on the anchor check specifically, not on the full failure list.)"""
         rows = copy.deepcopy(self.rows)
         rows[1]["query"] = "do these carriers show a raised chance of a tumour in the other breast"
-        self.assertFailsWith(rows, "lost anchor")
-
+        self.assertFalse([f for f in self.failures(rows) if "anchor" in f])
 
     def test_a_row_with_no_hash_cannot_be_checked_and_says_so(self):
         rows = copy.deepcopy(self.rows)

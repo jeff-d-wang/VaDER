@@ -28,6 +28,8 @@ Usage:
 """
 from __future__ import annotations
 
+from eval.datasets import validate_cases
+
 import argparse
 import json
 import random
@@ -35,13 +37,13 @@ import sys
 import time
 from pathlib import Path
 
-from common.corpus_text import spans_overlap
-from common.run_meta import append_run, config_hash, git_sha
+from common.corpus_text import Chunk, chunk_hits_span
+from common.run_meta import file_hash, source_hash, append_run, config_hash, git_sha
 from common.stats import wilson_ci
 from eval.compare_runs import mcnemar_exact_p
-from eval.llm_client import DEFAULT_MODEL, groq_chat_json
+from common.llm_client import DEFAULT_MODEL, groq_chat_json
 from retrieval import bm25, ir_metrics
-from retrieval.bm25 import BM25Index, Paragraph
+from retrieval.bm25 import BM25Index
 from retrieval.ir_metrics import QueryResult
 
 EVAL_DIR = Path(__file__).parent
@@ -78,11 +80,6 @@ def load_cases(path: Path) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def span_of(paragraph: Paragraph) -> dict:
-    return {"pmcid": paragraph.pmcid, "section": paragraph.section,
-            "char_start": paragraph.char_start, "char_end": paragraph.char_end}
-
-
 def span_key(span: dict) -> str:
     """Identity of a span, as a string, for exact lookups.
 
@@ -109,8 +106,15 @@ def check_index_covers_gold(cases: list[dict], index: BM25Index) -> int:
     one article the current convention reads as 186 paragraphs. Scored against
     it, this set still produced entirely plausible numbers, because a fragment
     inside the gold paragraph does overlap it. Plausible numbers off the wrong
-    index are the failure mode worth an explicit check."""
-    keys = {span_key(span_of(p)) for p in index.paragraphs}
+    index are the failure mode worth an explicit check.
+
+    The key match is against each chunk's individual `source_spans` entries,
+    not the merged chunk span. The phase D chunker keeps every merged
+    paragraph as its own span entry and never splits a paragraph, so a
+    whole-paragraph gold span still matches one entry exactly, and the exact
+    match (not overlap) is what keeps the fragment-index detection working."""
+    keys = {span_key({"pmcid": chunk.pmcid, **s})
+            for chunk in index.chunks for s in chunk.source_spans}
     missing = [c for c in cases if span_key(c["gold_span"]) not in keys]
     if missing:
         examples = ", ".join(sorted({m["gold_span"]["pmcid"] for m in missing})[:5])
@@ -121,30 +125,32 @@ def check_index_covers_gold(cases: list[dict], index: BM25Index) -> int:
     return len(missing)
 
 
-def to_query_result(case: dict, hits: list[Paragraph]) -> QueryResult:
+def to_query_result(case: dict, hits: list[Chunk]) -> QueryResult:
     """One query's ranking, in the shape ir_metrics scores.
 
-    The trick worth understanding: every retrieved span that overlaps gold is
-    relabelled to the single id GOLD, and judgments is {GOLD: 1}. That makes
-    the total relevant count 1, which is what recall's denominator has to be
-    when the set has exactly one gold span. Judging retrieved ids directly
-    instead would make the denominator "however many relevant things we
-    happened to return", and recall would come out 1.0 for everyone.
+    The trick worth understanding: every retrieved chunk that overlaps gold
+    (any of its source spans) is relabelled to the single id GOLD, and
+    judgments is {GOLD: 1}. That makes the total relevant count 1, which is
+    what recall's denominator has to be when the set has exactly one gold
+    span. Judging retrieved ids directly instead would make the denominator
+    "however many relevant things we happened to return", and recall would
+    come out 1.0 for everyone.
 
     Only the FIRST overlapping hit keeps the id; later ones are dropped from
-    the ranking. Two hits can both overlap gold once phase D's chunker
-    produces overlapping chunks, and leaving both in would let a query score
-    recall@k = 2.0 against a denominator of 1."""
+    the ranking. Two chunks can both overlap gold (a merge that split a
+    neighbourhood two ways), and leaving both in would let a query score
+    recall@k = 2.0 against a denominator of 1. A non-gold chunk keeps its own
+    `chunk_id`."""
     retrieved: list[str] = []
     gold_seen = False
-    for paragraph in hits:
-        if spans_overlap(span_of(paragraph), case["gold_span"]):
+    for chunk in hits:
+        if chunk_hits_span(chunk, case["gold_span"]):
             if gold_seen:
                 continue
             gold_seen = True
             retrieved.append(GOLD_ID)
         else:
-            retrieved.append(span_key(span_of(paragraph)))
+            retrieved.append(chunk.chunk_id)
     return QueryResult(query_id=case["query_id"], retrieved=retrieved, judgments={GOLD_ID: 1})
 
 
@@ -295,26 +301,26 @@ def measure_holes(cases: list[dict], results: dict[str, QueryResult], index: BM2
     and how much is the set's own single-gold assumption. Reported as a
     standing caveat on every row scored off this set, per the phase C design
     decision, rather than left as an unquantified worry."""
-    # Keyed by span, so both the gold paragraph and each candidate come out of
+    # Keyed by chunk_id, so both the gold chunk and each candidate come out of
     # the index the retriever actually searched, not off disk a second time.
-    paragraphs = {span_key(span_of(p)): p for p in index.paragraphs}
+    by_id = {chunk.chunk_id: chunk for chunk in index.chunks}
     sampled = sample_one_query_per_paragraph(cases, sample_n, seed)
     holes, judged, details = 0, 0, []
     for i, case in enumerate(sampled, start=1):
         result = results.get(case["query_id"])
         if result is None:
             continue
-        gold = paragraphs.get(span_key(case["gold_span"]))
+        gold = next((c for c in index.chunks if chunk_hits_span(c, case["gold_span"])), None)
         if gold is None:
             continue
         candidates = [doc_id for doc_id in result.retrieved[:top_n] if doc_id != GOLD_ID]
         judged += 1
         for doc_id in candidates:
-            paragraph = paragraphs.get(doc_id)
-            if paragraph is None:
+            chunk = by_id.get(doc_id)
+            if chunk is None:
                 continue
             verdict = groq_chat_json(HOLE_PROMPT.format(
-                query=case["query"], gold=gold.text, candidate=paragraph.text), model=model)
+                query=case["query"], gold=gold.text, candidate=chunk.text), model=model)
             if verdict.get("answers_the_query"):
                 holes += 1
                 details.append({"query_id": case["query_id"], "other": doc_id,
@@ -336,7 +342,7 @@ def measure_holes(cases: list[dict], results: dict[str, QueryResult], index: BM2
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
+    parser.add_argument("--cases", type=Path, required=True)
     parser.add_argument("--index", type=Path, default=EVAL_DIR / "runs" / "bm25_index.pkl")
     parser.add_argument("--top-k", type=int, default=100, help="retrieval depth; recall@100 needs 100")
     parser.add_argument("--report-k", type=int, default=10, help="k for the paired and per-stratum tests")
@@ -349,9 +355,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-missing-gold", action="store_true",
                         help="report anyway when gold spans are absent from the index "
                              "(they will score as misses that mean nothing)")
+    parser.add_argument("--exploratory", action="store_true")
     args = parser.parse_args(argv)
 
     cases = load_cases(args.cases)
+    try:
+        validate_cases(cases, exploratory=args.exploratory)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     print(f"{args.cases}: {len(cases)} queries over "
           f"{len({c['paragraph_id'] for c in cases})} paragraphs")
     index = BM25Index.load(args.index)
@@ -378,7 +390,9 @@ def main(argv: list[str] | None = None) -> int:
     # they vary run to run and would make every hash unique.
     config = {"retriever": "bm25", "k1": bm25.K1, "b": bm25.B, "top_k": args.top_k,
               "index": str(args.index), "n_indexed": index.n_docs,
-              "cases": str(args.cases), "n_queries": len(cases), "git_sha": git_sha()}
+              "cases": str(args.cases), "n_queries": len(cases), "git_sha": git_sha(),
+              "cases_sha256": file_hash(args.cases), "index_sha256": file_hash(args.index),
+              "source_hash": source_hash(), "report_k": args.report_k, "exploratory": args.exploratory}
     payload = {
         "config": config, "config_hash": config_hash(config),
         "meta": {"cases": str(args.cases), "n_queries": len(cases),
@@ -415,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         overall = payload["overall"]
         run_id = append_run(
             eval_set="retrieval", run_config=config, results_path=str(args.out),
+            input_paths={"cases": args.cases, "index": args.index},
             metrics={f"recall@{args.report_k}": overall.get(f"recall@{args.report_k}"),
                      "mrr": overall.get("mrr"), "n_queries": len(cases)})
         print(f"Registered run {run_id}")

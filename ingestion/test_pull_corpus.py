@@ -201,8 +201,13 @@ class TestPullCorpus(unittest.TestCase):
                 assert "already on disk (resumed)" in manifest2, "resume path did not trigger on second run"
                 # sha256 still populated on the resumed (read-from-disk) path.
                 import csv as _csv2
-                for r in _csv2.DictReader((out_dir / "manifest.csv").open()):
+                with (out_dir / "manifest.csv").open() as resumed_file:
+                    resumed_rows = list(_csv2.DictReader(resumed_file))
+                for r in resumed_rows:
                     if r["status"] == "ok":
+                        self.assertEqual(r["license_code"], "CC0")
+                        self.assertEqual(r["is_open_access"], "True")
+                        self.assertIn(r["version"], ("1", "2"))
                         assert len(r["sha256"]) == 64, f"resumed row {r['pmcid']} lost its sha256"
 
     @staticmethod

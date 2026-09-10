@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "dataset": "scifact",
+    "n_docs": 5183,
+    "n_queries": 300,
+    "top_k": 100,
+    "index_build_s": 0.4,
+    "search_s": 1.7,
+    "search_ms_per_query": 5.5
+  },
+  "metrics": {
+    "recall@5": {
+      "value": 0.6618,
+      "ci95": [
+        0.6093,
+        0.7143
+      ],
+      "n": 300,
+      "reference": null
+    },
+    "recall@10": {
+      "value": 0.7178,
+      "ci95": [
+        0.6677,
+        0.7671
+      ],
+      "n": 300,
+      "reference": null
+    },
+    "recall@100": {
+      "value": 0.8246,
+      "ci95": [
+        0.7819,
+        0.8672
+      ],
+      "n": 300,
+      "reference": 0.908
+    },
+    "ndcg@10": {
+      "value": 0.5979,
+      "ci95": [
+        0.5501,
+        0.6476
+      ],
+      "n": 300,
+      "reference": 0.665
+    },
+    "mrr": {
+      "value": 0.5692,
+      "ci95": [
+        0.5212,
+        0.6195
+      ],
+      "n": 300,
+      "reference": null
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "base_url": "http://127.0.0.1:8010",
+  "n": 60,
+  "concurrency": 1,
+  "seed": 0,
+  "wall_clock_s": 1.28,
+  "n_ok": 60,
+  "n_errors": 0,
+  "throughput_rps": 46.76,
+  "latency_p50_ms": 18.8,
+  "latency_p95_ms": 30.0,
+  "latency_p95_ci95": [
+    27.2,
+    35.8
+  ],
+  "ttft_p50_ms": 11.3,
+  "ttft_p95_ms": 18.4,
+  "ttft_p95_ci95": [
+    14.6,
+    20.9
+  ]
+}

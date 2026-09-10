@@ -2732,3 +2732,779 @@ was rewritten, and the reason for not rewriting it is part of the decision.
 - **Reversibility:** cheap. `trace.py` is additive and no-op by default. The YAML schema is a
   config edit. The one hard-to-reverse piece is `Chunk.source_spans` being a list, which is the
   shape chosen precisely so it does not need reversing.
+
+---
+
+## Design decision: the phase D structure-aware JATS chunker
+
+- **Date / module:** 2026-09-06, phase D. Logged before `retrieval/chunker.py` was written, per
+  the standing rule.
+- **Decision:** the first real chunker is section-aware and merge-based. For each article, walk
+  the abstract and body paragraphs in document order (via `common/corpus_text.iter_paragraphs_from_root`,
+  which owns the offset convention) with each paragraph's enclosing `<sec>` title
+  (`section_titles_from_root`). Accumulate consecutive paragraphs into one `Chunk` while they
+  share both the section (`abstract` / `body`) and the `<sec>` title, stopping the chunk when
+  adding the next paragraph would take it past a **350-token target**. Merged chunks therefore
+  never exceed 350 tokens; a paragraph already over 350 on its own becomes an oversized chunk,
+  because v1 does not split a paragraph (a sentence splitter is M6's to justify against a number).
+  Each merged paragraph
+  is recorded as its own `source_spans` entry `{section, char_start, char_end}`, so a
+  whole-paragraph gold label still matches one entry exactly and `chunk_hits_span` stays a plain
+  overlap test. `chunk_id` is `f"{pmcid}:{section}:{first_start}-{last_end}"`. Chunks under a
+  5-token floor are dropped (mirrors today's `min_paragraph_words`), as are boilerplate `<sec>`
+  titles (acknowledgements, funding, ethics, competing interests, data availability,
+  abbreviations), the same exclusion list phase C's builder uses.
+- **Tokens** are counted with `retrieval/bm25.tokenize`, the same regex tokenizer the index and
+  every retrieval number already use, so "350 tokens" means the same thing to the chunker and to
+  BM25. No separate tokenizer is introduced.
+- **An identity chunker** (one `Chunk` per raw paragraph, one `source_spans` entry) is kept
+  alongside it. Benchmarks (SciFact / NFCorpus, one doc per chunk) need it, and M6's chunking
+  ablation needs a raw-paragraph baseline to compare the section-aware and fixed-size strategies
+  against. `build_index` takes the chunker as a parameter; `config/vader.yaml`'s `chunker` field
+  names which one produced an index.
+- **Alternatives considered:**
+  - *No merging, one chunk per paragraph with section tags.* Rejected: "BM25 over chunks" would
+    then be byte-for-byte the current paragraph index, and phase D would produce a schema change
+    with no behavioural difference to measure. Merging tiny adjacent paragraphs into a retrievable
+    unit is the point of a structure-aware chunker over raw paragraphs.
+  - *Intra-paragraph splitting of oversized paragraphs.* Deferred to M6. It needs a sentence
+    splitter, which is real machinery, and the ablation module is where a splitting policy earns
+    its place against a measured recall number. Marked with a `ponytail:` comment naming the
+    ceiling.
+  - *A larger budget (~600 / ~900 tokens).* Rejected for v1: 350 keeps a chunk close to a single
+    dense paragraph of prose, which is the unit the phase C gold spans are, and keeps the
+    merge effect small enough to reason about. M6 sweeps this.
+  - *Merging across `<sec>` titles within the same top-level section.* Rejected: a `<sec>`
+    boundary is exactly the structure "structure-aware" is meant to respect, and merging a
+    methods subsection into a results subsection is the failure mode the design exists to avoid.
+- **Reasoning:** the chunker has to do one thing phase D actually uses (produce a chunk-granular
+  BM25 index that phase E ships and M6 ablates) and one thing it must not foreclose (the
+  span-overlap scoring that lets the phase C set survive a re-chunk without relabelling). Keeping
+  each merged paragraph as its own `source_spans` entry satisfies the second for free. Everything
+  past that (splitting, budget tuning, hierarchical chunks) is M6's to measure, not phase D's to
+  guess.
+- **Reversibility:** cheap. The BM25 index is git-ignored and rebuilt in under two minutes, the
+  chunker is a parameter to `build_index`, and the budget is a constant. The one thing that would
+  be expensive to change is the `source_spans`-per-paragraph provenance shape, and that is the
+  shape chosen so it does not need changing.
+
+---
+
+## Experiment: BM25 on the exact-identifier failure case (matched vs mismatched notation)
+
+- **Date / module:** 2026-09-06, phase D. **Written before `eval/score_identifier_cases.py` was
+  run**, per the standing rule.
+
+- **The question.** `PROJECT_PLAN.md` M3: gene symbols, rsIDs, HGVS strings and accessions are
+  exact-match tokens, and the single clearest lesson in the project is a query where a retriever
+  fails on one. Phase D has no dense retriever yet, so the failure constructed here is BM25's own:
+  a query that names a variant in a different notation than the gold paragraph uses. `rs80338939`
+  and `c.35delG` are the same variant; BM25 has no way to know that.
+
+- **The set.** `eval/data/identifier_cases.jsonl`, 15 paired cases built by
+  `eval/mine_notation_pairs.py` (harvest `HGVS (rsID)` / `form (form)` equivalences the corpus
+  writes out itself) plus `eval/build_identifier_cases.py` (pick a gold paragraph that contains
+  exactly one of the two forms, with corpus-paragraph document frequency 1 for the present form).
+  Each case: one gold span, two queries with an identical minimal stem ("What does the literature
+  report about the {form} variant?"), `matched` using the present form and `mismatched` the
+  absent one. Axes: 6 cDNA<->protein, 6 cDNA<->rsID, 3 cDNA<->cDNA (legacy name or transcript
+  version). **Labels are unreviewed** (`validated_by: null`); this project's base rate for
+  unreviewed agent labels is about 50% wrong, so the number is provisional until a person reads
+  the cases.
+
+- **Prediction (before running):**
+  1. `matched` recall@10 **>= 0.85**, point estimate ~0.95. The present form has paragraph
+     document frequency 1, so the query's one distinctive token points at exactly one chunk.
+  2. `mismatched` recall@10 **<= 0.15**, point estimate ~0.05. The mismatched identifier is
+     absent from the gold paragraph, so the only tokens that can retrieve it are the generic stem
+     words, which cannot single out one chunk in 193,059.
+  3. delta **~ +0.85**, McNemar exact p < 0.05, discordance almost entirely matched-only.
+
+- **Minimum detectable effect:** n=15 pairs. McNemar exact needs roughly a 12/0 or 13/1
+  discordant split to clear p=0.05, and the Wilson half-width on each arm at n=15 is about
+  +/- 25pp. **This run distinguishes "large gap" from "no gap" and nothing finer.** A true gap
+  near the predicted 85pp is overwhelmingly powered for the directional claim; a gap under about
+  30pp would be inconclusive at this n and must be read as such.
+
+- **What would falsify or confound it.** `matched` < 0.6 would mean BM25 is not even reliable on
+  an exact-match df-1 identifier, which would point at the chunker diluting the identifier or at
+  a single-gold hole, not at notation. `mismatched` > 0.3 would mean the stem words are doing
+  real retrieval work and the contrast is not clean; the fix would be an even barer stem.
+
+- **Method:** `python -m eval.score_identifier_cases --index eval/runs/bm25_index.pkl` against the
+  phase D chunk-granular BM25 index (structure-aware chunker, k1=1.5, b=0.75), span-overlap
+  scoring reused from `score_retrieval.py`, paired McNemar on `matched` vs `mismatched` hit@10
+  per case.
+
+- **Result:** filled in below, after the run.
+
+- **Result (2026-09-06, config `cfg-87de12b65498`, git `7f494ed`+working tree, n=15 pairs):**
+
+  | arm | recall@10 | 95% CI (Wilson) | hits |
+  |---|---|---|---|
+  | matched | **0.400** | [0.198, 0.643] | 6/15 |
+  | mismatched | **0.000** | [0.000, 0.204] | 0/15 |
+
+  delta **+0.400**, discordant 6 matched-only / 0 mismatched-only, **McNemar exact p = 0.031**.
+  By axis, matched recall was 0.67 (cDNA<->protein), 0.33 (cDNA<->cDNA), 0.17 (cDNA<->rsID);
+  mismatched was 0.00 on all three. When a matched query hit, the gold chunk was at rank 1 or 2;
+  when it missed, it was at rank 16, 51, 60, 97 or absent from the top 100.
+
+- **Did the prediction hold?** **No on the main prediction, and the miss is the finding.**
+  - *Prediction 1 (matched >= 0.85): wrong, it was 0.40.* The cause is a misread of this
+    project's own tool. `mine_notation_pairs.py` reports the present form's document frequency
+    *among the candidate paragraphs it kept* (25-400 tokens, exactly one form present), not its
+    true corpus-wide frequency. `c.556C>T` is a recurrent BRCA1 variant that appears in many
+    corpus paragraphs; the "df 1" filter never established otherwise. A bare identifier query
+    whose token is in dozens of chunks, with only generic stem words to break the tie, does not
+    reliably reach the top 10.
+  - *Prediction 2 (mismatched <= 0.15): held, and then some, at 0.00.* Not one mismatched query
+    retrieved its gold paragraph. The equivalent notation is genuinely inert for BM25.
+  - *Prediction 3 (direction): held.* The gap is real and significant (McNemar p=0.031), about
+    half the predicted size because the matched arm underperformed, not because the mismatched
+    arm overperformed.
+  - The confound I pre-registered also fired: several matched misses (`rs180177102`,
+    `rs41293455`) have the identifier present in the gold paragraph but the gold *chunk* ranked
+    deep or off the list, because the structure-aware chunker merged that paragraph into a longer
+    chunk where the identifier is a smaller share of the text and BM25's length normalization
+    pushes it down. That is a real chunking tradeoff and belongs in M6's ablation.
+
+- **What this establishes, stated at the strength the evidence supports.**
+  - **A mismatched-notation query never retrieved its target (0/15).** That is the exact-match
+    brittleness the plan wants demonstrated, and it is demonstrated cleanly.
+  - **A matched-notation identifier-only query is itself an unreliable retrieval target (0.40)**,
+    for two reasons this run separates: the identifier is often not corpus-unique, and merging
+    chunks dilutes it. Both are retrieval-set / pipeline facts worth carrying into M3 and M6.
+  - The +40pp matched-vs-mismatched gap is significant at n=15 but the set is small and
+    **unreviewed**. Treat 0.40 / 0.00 as INTERIM.
+
+- **What changed because of this:**
+  - `docs/RESULTS.md` gets the two rows, marked INTERIM and unreviewed.
+  - Concrete cheap follow-up, for a session with human review: re-pick `SELECTIONS` in
+    `eval/build_identifier_cases.py` filtering present forms by true corpus token frequency
+    (`BM25Index.doc_freq`, which now exists), and consider a stem with one real disambiguating
+    word (gene or condition) so a matched identifier query is not competing on stem words alone.
+    The mismatched arm needs no change; 0/15 is already the point.
+  - The chunk-dilution observation is logged for M6: a rare-token query is a case where merging
+    can *lose* recall, the opposite of the usual "more context per chunk helps" intuition.
+
+- **Follow-up run, v2 (2026-09-07, config `cfg-90d5a23fbcde`, git `7f494ed`+working tree).** The
+  two follow-ups above were both done. (a) The query stem changed from the sentence form to a
+  keyword form, `"{gene} {form} variant"`, dropping the filler ("literature", "report", "about
+  the") that was matching unrelated review chunks. Gene is a curated field on each selection, null
+  for the 2 cases where the span names several genes. (b) `present_min_token_df` (the smallest
+  corpus document frequency among the present form's tokens, from `BM25Index.doc_freq`) is now
+  stored per row, with a generous ceiling guard.
+
+  | arm | recall@10 | 95% CI | hits | (was, v1) |
+  |---|---|---|---|---|
+  | matched | **0.933** | [0.702, 0.988] | 14/15 | 0.400 |
+  | mismatched | **0.067** | [0.012, 0.298] | 1/15 | 0.000 |
+
+  delta **+0.867**, discordant 13 matched-only / 0 mismatched-only, **McNemar exact p = 0.0002**.
+  By axis: matched 1.00 (cDNA<->cDNA), 0.83 (cDNA<->protein), 1.00 (cDNA<->rsID).
+
+  - **The v1 matched score of 0.40 was almost entirely a stem artifact, not a retrieval limit.**
+    With a query a person would actually type, BM25 finds the matched-notation identifier 14 of
+    15 times, exactly as M3 predicts. Token frequency was checked and **was not** the binding
+    constraint: every present form has a token in 25 or fewer chunks, and the v1 misses included
+    forms with a token in 2 or 3 chunks. The binding constraint was the filler words.
+  - **The mismatched arm picked up one hit (was 0).** `GJB2 rs80338939 variant` retrieved its
+    gold paragraph at rank 1: `GJB2` is a rare gene in a cancer-genomics corpus, so the gene
+    token alone found the one GJB2 paragraph regardless of the wrong identifier. That is the
+    price of adding the gene token to de-contaminate the matched arm. For a corpus-rare gene the
+    notation contrast is weaker; at 1 of 15 it does not change the conclusion. **Mismatched
+    notation is still essentially inert: 1 of 15.**
+
+- **Chunk-dilution, now measured (2026-09-07).** The v1 entry flagged that merging paragraphs
+  might bury a rare identifier. Measured directly by scoring the same v2 cases against a
+  paragraph-granular (identity chunker) index and pairing on the matched arm:
+
+  | index | matched recall@10 | matched hits |
+  |---|---|---|
+  | structure-aware (merged) | 0.933 | 14/15 |
+  | paragraph (identity) | 1.000 | 15/15 |
+
+  Paired: 1 discordant (paragraph-only), 0 the other way, **McNemar p = 1.000** (not significant
+  at n=15). But the *direction* is consistent: 5 of 15 matched cases ranked worse on the merged
+  index and 0 ranked better (e.g. PIK3CA `c.1624G>A` rank 5 -> 14, which is the one case that
+  crossed the k=10 line; `c.556C>T` rank 1 -> 3; `rs180177102` rank 3 -> 5). **Merging costs a
+  rare-token query a few rank positions; on this 15-case set it changed recall@10 once.**
+
+- **What changed because of this:**
+  - `docs/RESULTS.md`: the v1 identifier rows are superseded by the v2 rows (still INTERIM,
+    labels still unreviewed); the chunk-vs-paragraph comparison is added.
+  - `PROJECT_PLAN.md` M6 gets an explicit requirement: measure the rare-token / identifier
+    stratum in the chunking ablation, on the n>=300 set where a few-rank-position effect is
+    detectable, conditioning on per-row token rarity. The direction is known (merging ranks a
+    rare-token hit lower); M6 sizes it.
+  - Still open, unchanged: a human review of the 15 cases before the +87pp number is quoted as
+    anything but INTERIM.
+
+---
+
+## Measurement: phase C retrieval set re-scored on the phase D chunk index, and finishing-phase-C prep
+
+**Date:** 2026-09-07, phase D follow-up. Not a pre-registered experiment: a re-score of an
+existing set on a new index (a regression check) plus infrastructure prep, done while finishing
+the phase D follow-up list.
+
+- **What was run.** The 138-paragraph / 276-query phase C INTERIM set scored against (a) the
+  phase D structure-aware chunk index (193,059 chunks) and (b) a paragraph-granular index
+  (344,900), paired on `query_id`. Full table in `docs/RESULTS.md`, "Phase D re-score".
+- **Result.** recall@10 0.786 (chunk) vs 0.801 (paragraph), -1.4pp, McNemar p=0.58 (not
+  significant at n=276). recall@1 -3.9pp, ndcg@10 -2.7pp, mrr -3.2pp. Rank shifts among the 254
+  queries both answer: 61 worse on chunks, 48 better, 145 unchanged. Same direction as the
+  identifier failure case: merging pushes the gold a rank or two down, which barely moves
+  recall@10/100 and costs recall@1 / MRR a few points. Still INTERIM: the set is ~55% defective,
+  but a paired delta survives that because defects hit both arms equally.
+- **Why it matters.** It confirms the phase D chunk index does not break phase C scoring, and it
+  is the first chunk-vs-paragraph row for M6's chunking ablation, on the only n>100 retrieval set
+  that exists.
+- **Prep for the session that finishes phase C** (blocked here on `GROQ_API_KEY` and a human
+  reviewer; neither blocks phase E):
+  - `eval/runs/doc_freq_paragraph.json` built: the `term -> df` table over the 344,900-paragraph
+    corpus, for `build_retrieval_set.py --df-table`. It must be paragraph-granular because
+    `MAX_RAREST_TERM_DF = 1000` is calibrated against that denominator, not against the chunk
+    count.
+  - `eval/README.md` gains a "Finishing phase C: the runbook" section: the current defect state
+    (55% of the 20 reviewed wrong, 3 of 6 strata empty), the v3 generator, and the command
+    sequence. The set must be regenerated with `retrieval_qgen_v3`, not extended, and only with a
+    human at the worksheet.
+
+---
+
+## Experiment: v3's real defect rate, measured by human review, and the deictic-query defect
+
+**Date:** 2026-09-07/08. Prediction was implicit in the earlier entry ("does a generic query
+score well"): the mechanical filters "reject two known defect shapes"; whether unknown shapes
+remained was explicitly flagged as unverified. No numeric threshold was pre-registered for this
+pass, unlike the anchor-rule tuning's "A < 50% means stop"; recorded as a gap, not repeated below.
+
+- **Method.** A fresh batch generated with `retrieval_qgen_v3` (112 paragraphs, 224 queries,
+  before the run hit the daily free-tier token cap), worksheeted at n=20 stratified across
+  abstract/intro/methods, and read by the user (`eval/retrieval_worksheet_v3.md`).
+- **Result: 6 of 20 wrong, 30%, Wilson 95% CI [15%, 52%].** Down from v1's 55% [34%, 74%], but the
+  CIs overlap and n=20 twice is not enough to call the improvement itself significant; what is
+  clear is that v3 is not defect-free.
+- **The taxonomy, read by hand, not asserted from the summary counts** (`CLAUDE.md`'s rule: this
+  is the intellectual core, do it with the user, not as a handoff):
+  - **Deictic self-reference, 4 of 6** (`PMC11975159:body:3709`, `PMC8730771:body:4665`,
+    `PMC10570683:body:4602`, `PMC6717746:body:4640`). The query names its subject as "the
+    (prospective UTUC) study", "in the study", "in this study", "according to the authors"
+    instead of the paper's actual subject. Any paper doing the same kind of analysis answers the
+    query's *words*; almost none answer what it's actually asking. This is the specificity defect
+    the anchor/df-table checks were built to catch, wearing a shape neither check can see: the
+    query does not lack a rare token (it may still contain one, borrowed from elsewhere in the
+    sentence), it lacks a rare **subject noun phrase** in the position that is doing the asking.
+  - **No real anchor engaged, 1 of 6** (`PMC6586039:body:0`): "What is unknown about DM and HSR
+    formation?" is broad enough that a different paragraph on unknown aspects of the same topic
+    would satisfy it.
+  - **Trivial/off-target extraction, 1 of 6** (`PMC10816163:abstract:0`): the query asks for an
+    acronym expansion rather than engaging the paragraph's substantive finding.
+- **Root cause.** `QGEN_PROMPT` told the model to pick anchors and write two queries about a
+  fact, but never forbade substituting a deictic placeholder for the actual subject, and never
+  required a query to *use* one of its own anchors as the subject being asked about. The
+  mechanical filters (verbatim `answer_quote`, tautology check, corpus-df specificity) all operate
+  on the answer side or on raw token rarity; none of them look at what the query's grammatical
+  subject actually names.
+- **The fix, applied (`eval/build_retrieval_set.py`, prompt bumped to `retrieval_qgen_v4`).** One
+  rule added: name the real subject (an anchor: gene, variant, cohort, assay, disease), never
+  stand in for it with "this study" / "the study" / "the paper" / "the authors"; if the paragraph
+  gives nothing more specific to call its subject, treat it as answering nothing. Deliberately not
+  a mechanical filter (a df check or anchor-echo check operating on "does the query contain
+  'study'" would be pattern-matching the symptom): the deictic phrase itself is not the defect, a
+  query that fails to name a specific subject is, and only the model reading its own draft against
+  that instruction can tell the difference at generation time. **Unvalidated**: this needs the
+  same worksheet pass, on a fresh v4 batch, before it is trusted.
+- **A second thing found and fixed while reviewing this: `eval/verify_retrieval_set.py`'s
+  anchor-echo check was stale.** It failed every query that did not repeat every anchor verbatim,
+  which was v1/v2's design and is not v3's (anchors are metadata there, by the 2026-09-05/06
+  decision). Scoring the reviewed v3 batch through it produced ~150 "FAILURE"s that were this
+  obsolete rule firing on expected v3 behavior, which would have buried the two or three real
+  mechanical failures a corpus change might someday produce. Removed the per-query check
+  (kept "is the anchor still in the gold paragraph", which is real); the pinning test
+  (`test_query_that_lost_an_anchor_is_caught`) is now `test_query_not_echoing_an_anchor_is_not_a_failure`.
+- **What changed because of this:**
+  - `eval/runs/retrieval_cases_v3.jsonl` (the draft, not yet promoted to `data/retrieval_cases.jsonl`):
+    the 6 confirmed-wrong paragraphs (12 rows) dropped; the 14 confirmed-valid paragraphs (28 rows)
+    carry `validated_by: "user"`, `validation_verdict: "valid"`. 108 paragraphs / 216 queries remain,
+    14 reviewed, 0 of those wrong (the wrong ones having just been removed; the true rate before
+    filtering was 6/20, recorded above, not erased by this cleanup).
+  - `docs/RESULTS.md` and `START_HERE.md` get the 30% number and the taxonomy, replacing "v3's
+    defect rate is unmeasured".
+  - Next, once budget allows (this run appears to have exhausted today's token cap): a small
+    v4 batch, worksheeted the same way, before deciding whether to finish the full ~165-paragraph
+    build on v4 or iterate the prompt again.
+
+---
+
+## Design decision: Phase E, retrieval-only, the service rewrite and the concurrency finding it surfaced
+
+**Date:** 2026-09-08. Build shape decided as part of executing Phase E (`PROJECT_PLAN.md`'s "Tier 1
+execution order (v4)"), which already specifies what this is: the stub replaced by the real
+pipeline behind the unchanged streaming interface. This entry records how, and a finding the first
+load test against it surfaced that wasn't anticipated.
+
+- **What changed.** `service/search.py`'s Step 0c stub (title-prefilter, then open and scan one
+  XML file per candidate) is replaced by `retrieval/bm25.py`'s postings index over
+  `retrieval/chunker.py`'s structure-aware chunks, built once in `app.py`'s lifespan hook
+  (~193,059 chunks, ~60s) and searched per request. `SearchStats`' field names are unchanged on
+  the wire (`candidates_matched_by_title`, `candidates_scanned`, `stopped_reason`), repurposed:
+  BM25 has one honest "how much did we look at" number (the ranked hit pool size) where the stub
+  had two, and `max_scan` now means retrieval depth (`BM25Index.search`'s `top_k`) rather than
+  candidate files opened. Every request is traced (`common/trace.py`): a `query` trace with a
+  `retrieve` span.
+- **Deliberately not done yet: generation.** The v1/v4 definition of "ship it" includes an LLM
+  call (the $0.05/query cost target is meaningless without one, and `eval/baselines/bm25_only.py`
+  already shows the shape: retrieve, then ask the model to answer from only those chunks). Split
+  out so a load test can isolate the retrieval stage first, per this project's own rule that
+  measured upgrades land one at a time. It is also the practical reason to sequence this way right
+  now: generation calls Groq, which phase C's regeneration (v3/v4 batches) is also drawing against
+  the same daily budget and per-minute rate limit, so bundling the two would make both sets of
+  numbers reflect contention rather than either system's real behavior.
+- **A real bug found and fixed while wiring tracing: `trace_request` cannot wrap a streamed
+  generator.** The first version put `with trace_request("query", ...):` around the whole
+  `for span in searchmod.search(...)` loop inside `_stream`. Starlette's `StreamingResponse` pumps
+  a sync generator one `next()` at a time via `anyio.to_thread.run_sync`, and different `next()`
+  calls do not share one `contextvars.Context`, so `trace_request`'s `__enter__` (thread A) and
+  its `finally: _current.reset(token)` (thread B, whichever call finally drains the loop) raised
+  `ValueError: Token ... created in a different Context`. Fixed by moving `trace_request` to wrap
+  only `list(searchmod.search(...))`, materializing all matches before the first `yield`: since
+  BM25 retrieval is one bounded `index.search()` call rather than the stub's genuinely incremental
+  per-candidate work, there is no real streaming benefit lost. `t0` still starts before that call,
+  so TTFT still measures real retrieval latency, not an emptied-out generator. Regression test:
+  `service/test_app.py::test_query_writes_a_retrieve_trace_span`.
+- **A second cleanup: `common/tests/test_corpus_text.py`'s `TestConsumersAgree` had two tests
+  pinning `service.search._find_span_in_xml`**, the removed stub function. Not adapted, removed:
+  the class exists to catch three *independent* paragraph-to-span code paths disagreeing, and
+  service/search.py is no longer independent, it calls the same `retrieval.chunker`/`Chunk.span()`
+  path `test_bm25_spans_resolve` already checks. A test asserting that function agrees with itself
+  would protect nothing.
+- **The load test result** (`docs/RESULTS.md`, "Phase E, retrieval-only"): a single warm request
+  retrieves in 343ms (matches phase D's bench number), but **p95 TTFT under concurrency 20 is
+  2.8s**, already over the task contract's 1.5s target, before any generation is added.
+- **Why, and why it is not a BM25 problem.** BM25 search here is CPU-bound pure Python (scoring
+  postings); FastAPI's sync-route threadpool cannot run CPU-bound Python concurrently across
+  threads because of the GIL, so concurrent searches queue rather than overlap and latency scales
+  with queue depth. This is a serving-concurrency-model finding, not a retrieval-quality one: the
+  algorithm meets the target, the current single-process service does not, under load.
+- **Not fixed here, on purpose.** The standard fix is multiple worker processes
+  (`uvicorn --workers N`, each with its own index and GIL) or an async/thread-pool-friendly index
+  implementation. That is M10 (latency/cost engineering) or M12 (Kubernetes, where a multi-replica
+  deployment is the natural home) territory, not a Phase E patch applied in passing. Recorded now,
+  precisely, because Phase E exists to stop treating the contract's targets as hypotheses, and
+  this is the first time they were checked under load.
+- **What changed because of this:** `docs/RESULTS.md` gets the first Phase E service numbers,
+  marked `pending` on git SHA (uncommitted working tree) and without a config hash (the service
+  doesn't call `common.run_meta.append_run` yet; worth adding once generation lands and there is a
+  real pipeline to hash). `PROJECT_PLAN.md` M10/M12 gain a concrete, measured starting point rather
+  than a hypothetical one. Next Phase E work: add generation behind the same interface, then
+  re-run the load test for the real p95/TTFT/cost numbers the task contract asks for.
+
+---
+
+## Design decision: citation-marker superscripts strip at the presentation layer, not at extraction
+
+**Date:** 2026-09-08, phase C follow-up. Prompted by the user reading `retrieval_worksheet_v4.md`
+and spotting `PMC9218467`'s gold paragraph reading "...arising in the liver.\n1\n They mostly
+occur...": a bare digit sitting alone, easy to misread as data.
+
+- **Diagnosed against the real XML, not guessed.** The digit is `<sup><xref ref-type="bibr"
+  rid="...">1</xref></sup>`, JATS' citation-reference markup; `_paragraph_items`'s
+  `"".join(p.itertext())` includes it verbatim, with the real pretty-print whitespace around it
+  (`sup.text` is a literal `"\n"` in the source XML), which is why it renders as if on its own
+  line. **Corpus-wide, not one article:** 7,402 of 7,863 articles carry `ref-type="bibr"`.
+  A citation range ("2-4") is three xrefs with a bare "-" text node between them, the middle one
+  sometimes empty.
+- **What it can actually break, per consumer.** BM25/retrieval: negligible, a bare digit token's
+  document frequency is enormous, idf near zero. The query generator and a human worksheet
+  reader: real, moderate risk, a bare number next to a percentage or count reads as if it were
+  part of the finding. Any future generation-time citation/groundedness check: low, spans still
+  resolve to real text.
+- **Why this is not a fix to `common/corpus_text.py`'s extraction.** That is the single
+  offset-bearing convention every stored span, `gold_text_sha1`, and standing rule 5 depends on.
+  Stripping xref text there would shift every character offset downstream of a citation marker,
+  invalidating already-computed gold spans across `answer_cases.jsonl`, `identifier_cases.jsonl`,
+  and `retrieval_cases.jsonl` (the `gold_text_sha1` integrity checks in `verify_spans.py` /
+  `verify_retrieval_set.py` / `check_gold_claims.py` would catch this loudly, not silently, but
+  fixing it that way means re-verifying every case in every eval set, mid-phase-C). Exactly the
+  "cannot be retrofitted without a re-index" class of change the Chunk provenance schema was
+  built to avoid needing.
+- **The fix: `common.corpus_text.clean_paragraph_texts`, presentation-only, structural not
+  regex.** Walks the real `<p>` element (already available inside `_paragraph_items`, previously
+  unexposed) and drops a `<sup>` subtree whose only element children are `ref-type="bibr"`
+  xrefs (or a bare unwrapped one), keeping its `.tail` (the real prose after it), then collapses
+  whitespace. Grounded in the actual JATS structure rather than a regex guessing at rendered
+  digits, so it does not risk stripping a real number ("Stage 4 disease", a dose, a year) that
+  happens to sit near punctuation. Verified: a bare `<sup>2</sup>` with no `<xref>` child (could
+  be a real exponent or notation) is left alone. Aligned index-for-index with
+  `iter_paragraphs_from_root`'s yields, and never reads or writes an offset,
+  `gold_text_chars`, or `gold_text_sha1`.
+- **Wired into exactly two places**, both presentation, neither provenance:
+  - `eval/build_retrieval_set.py`: the QGEN_PROMPT's `{paragraph}` and the mechanical `validate()`
+    call both now read `clean_text`, not `text`. Deliberately consistent: the model is validated
+    against exactly what it was shown, not a superset it never saw (a raw-text check would
+    spuriously reject a legitimate answer_quote landing across where a citation was removed).
+    `text`/`gold_span`/`lexical_overlap`/`gold_text_sha1` (in `rows_for`) are untouched, still raw.
+  - Both worksheet renderers (`build_retrieval_set.render_worksheet`,
+    `make_case_worksheet.render_worksheet`) get a one-line note that a bare number is a citation
+    marker. The gold-paragraph display itself stays raw and untruncated on purpose: it is there so
+    a reviewer can also catch an offset bug, and a cleaned rendering would hide that.
+- **Not done, and not needed:** touching `service/search.py` or any future generation prompt
+  there. Phase E's current service is retrieval-only (`git log`, `a16167a`); when generation is
+  wired in, its prompt construction should reuse `clean_paragraph_texts` the same way.
+- **What changed because of this:** `common/corpus_text.py` gains `clean_paragraph_texts` (tested,
+  `common/tests/test_corpus_text.py`, against the real `<sup><xref ref-type="bibr">` shape found
+  in `PMC9218467`, plus a negative control for a bare `<sup>` with no xref). No offset, hash, or
+  already-stored case changes. Not yet reflected in any generated batch: the next v4 worksheet
+  review should distinguish defects from the deictic-subject prompt rule (logged separately) from
+  whatever this removes, though both landed before the next batch runs, so v4's own review cannot
+  cleanly separate them either.
+
+**Addendum, same day:** the first cut above only handled the `<sup>`-wrapped shape, and the user
+caught the gap by hand-checking three more articles (`PMC10859687`, `PMC8410541`, `PMC5883065`)
+before trusting it. A sample of 800 corpus articles shows the shape it missed is the *majority*
+one: 607 files carry a bare (non-`<sup>`) `ref-type="bibr"` xref, only 153 the wrapped form. A bare
+xref sits inside `[...]` or `(...)`, e.g. `[1–3]`, `(3-5)`, `[1, 2, 3, 4]`, and the first cut
+stripped only the digits, leaving the brackets: `cells [1–3].` became `cells [].`, `(3–5)` became
+`(–)`. Confirmed against the real files, not guessed. That is worse than the original marker: a
+dangling `(–)` or `[]` reads like corrupted data, not a citation, to exactly the reader this
+function exists to protect (a worksheet reviewer, an LLM asked to summarize).
+
+- **Fix:** `_visible_text` now leaves a sentinel (`"\x00"`) where a marker was removed, instead of
+  nothing. A second pass, `_strip_citation_sentinels`, removes a `[...]`/`(...)` that holds nothing
+  but sentinels and connector punctuation (comma, dash, whitespace) as a unit, then collapses any
+  remaining bare sentinel (the `<sup>` case, or a bare xref with no delimiter) to one space. Scoped
+  by construction: the bracket-removal regex requires a sentinel inside via lookahead, so a real
+  bracket with no citation in it (`[rRNA]`) or one mixing a citation with real words (`[see ref
+  3]`) is left untouched, never guessed at from the rendered text alone.
+- **Tested against the real shapes**, not synthetic ones invented before checking: a new test
+  class in `common/tests/test_corpus_text.py` reproduces `[1]`, `[2, 3, 4]`, `(3-5)`, and `(1, 2)`
+  as found in `PMC10859687`, `PMC8410541`, `PMC5883065`, plus the negative control that a bracket
+  with no marker inside is untouched. 320 tests pass (315 + 5 new).
+- **Lesson for this project, not just this function:** "found one real example, fixed that shape,
+  tests pass" is not the same claim as "checked this against the corpus's actual distribution of
+  shapes." The first pass was reviewed and merged on the strength of one paragraph; it took the
+  user independently sampling three more articles to find that the fixed shape was the minority
+  one. Worth remembering next time a structural text fix is built from a single example.
+
+**Second addendum, same day:** the user asked whether a *real* number could ever be deleted by
+this. Structurally, no: detection keys off the JATS `ref-type="bibr"` attribute, never off what a
+digit looks like, so plain prose is never at risk. There is exactly one gap, found by scanning
+(not guessed): a `<sup>` can carry a real label alongside its citation, not just citation
+notation. `_is_citation_marker`'s `<sup>` check treated "all element children are bibr xrefs" as
+sufficient to drop the whole subtree, ignoring the sup's own text and its children's tails.
+
+- **Confirmed in the real corpus**, not synthetic: `PMC8849557` uses `<sup>mut<xref
+  ref-type="bibr">37</xref></sup>` as a mutation-status label -- "BRCA1mut" is used throughout that
+  paper as shorthand for "a BRCA1-mutant carrier," a materially different thing from "BRCA1." The
+  first-pass fix silently collapsed every occurrence to "BRCA1." `PMC8211653` similarly loses
+  "Revertant" (a cell-line name) from `<sup>Revertant <xref ref-type="bibr">24</xref></sup>`. This
+  is a meaning-changing deletion in exactly the variant-status text this project's labels are
+  about, not a citation-cleanup artifact.
+- **Measured scope:** sampling 3,000 articles for a `<sup>` classified as a citation marker whose
+  own text or a child's tail is not pure connector punctuation (comma, dash, bracket, whitespace):
+  12 files. Small, but real, and concentrated exactly where it is most costly (mutation-status
+  shorthand).
+- **Fix:** `_is_citation_marker`'s `<sup>` branch now also requires the sup's own `.text` and
+  every xref child's `.tail` (both still inside the closing `</sup>`) to be connector-only. When
+  a `<sup>` fails that check, it is no longer treated as one droppable unit; `_visible_text` walks
+  into it normally, and the `<xref>` child inside is still independently recognized and stripped
+  (bare-xref detection doesn't care about nesting depth) -- so the citation number is still
+  removed, only the real label is spared. Also widened the connector-punctuation set to cover
+  every dash character actually found in citation ranges (hyphen, non-breaking hyphen, figure
+  dash, en/em dash, minus sign), not just the two seen in the first example.
+- **Caught an unrelated bug while writing this fix**, before it ran: the widened connector string
+  put a bare `-` between two other charclass members inside an f-string-built regex character
+  class, which `re` reads as a range (`;` to U+2010) rather than a literal hyphen unless escaped
+  or positioned first/last. Fixed by keeping it a raw string with `\-`, matching how the original
+  `_SEP` was already written; caught by inspection before the first test run, not by a failing
+  test, so it is not itself evidence this class of mistake is covered going forward.
+- **Not a regression on the case this function was built for**: the plain `<sup><xref>1</xref>
+  <xref>2</xref></sup>` shape, with no real text sharing the sup, still disappears completely --
+  covered by a dedicated regression test.
+- **Tested against the real shapes**: new test class in `common/tests/test_corpus_text.py`
+  reproduces the `PMC8849557`/`PMC8211653` structures, asserting the label survives, the citation
+  number is still gone from it, and the no-real-text case still fully disappears. 324 tests pass
+  (320 + 4 new).
+
+---
+
+## Experiment: the 50-case worksheet mostly re-measured v3, not v4, and a refined defect taxonomy
+
+**Date:** 2026-09-08, phase C. Correction to the previous entry's framing, caught before it was
+acted on further: the user's 50-case review of `eval/retrieval_worksheet_v4.md` was read as a test
+of the v4 (deictic-subject) prompt fix. It mostly is not.
+
+- **What the data actually shows.** `eval/runs/retrieval_cases_v3.jsonl` has grown to 111
+  paragraphs (222 rows) since the v2 cleanup left it at 108. Of those, only **3 paragraphs (6
+  rows) are stamped `retrieval_qgen_v4`**; the other 108 are still `retrieval_qgen_v3`, generated
+  before the prompt was changed. `created_by` is a permanent provenance field, not rewritten by
+  later cleanup, so this was checkable directly rather than assumed. None of the 15 cases the
+  worksheet review marked `wrong` are among the 3 v4 paragraphs (`PMC11894594:abstract:0`,
+  `PMC5593158:abstract:0`, `PMC7487731:abstract:546`).
+- **So this review is a second, larger, independent measurement of v3's defect rate, not a
+  measurement of v4.** 15/~47 v3 cases wrong here, combined with the first worksheet's 6/20 (no
+  paragraph overlap between the two samples), pools to roughly 21/67 ≈ 31%. The two independent
+  estimates (30%, 32%) agree closely: **v3's ~30% defect rate looks like a real, stable number**,
+  not noise from a small first sample. **v4 remains essentially untested**: n=3 cannot distinguish
+  0% from 30%, regardless of how those 3 happened to score.
+- **The corrected, evidence-grounded taxonomy**, read from the actual queries and gold paragraphs,
+  not the one-line reasons alone (10 of 15 checked directly against source):
+  1. **Generic anchors, real but not paper-unique (9-10 of 15, the dominant pattern).** The anchors
+     ARE verbatim, on-topic terms (`FRET signal value`, `Addgene`, `nationwide cohort`, `NOS
+     score`, `Adenoid cystic carcinoma`), but they name a common technique, instrument, or
+     methodological convention that recurs near-verbatim across many papers' methods sections,
+     while the paragraph's actual paper-unique details (an institution, a date range, an exact
+     cohort size, a specific numeric parameter) go unused. `PMC8099847`'s gold paragraph names
+     "Medical University of Gdańsk" and "1992-2012"; the generated queries use neither, asking
+     instead about "the examined salivary gland cohort." `PMC6102817`'s sole anchor, "NOS score,"
+     is boilerplate systematic-review methodology shared by hundreds of meta-analyses; the
+     paragraph carries no paper-identifying content at all. This is not the deictic-placeholder
+     defect v4 targets ("the study" / "the authors"): the words used are real and specific-sounding,
+     just not corpus-rare.
+  2. **Paraphrase-quality failures (3 of 15), a different axis entirely.** `PMC6220520`'s
+     paraphrase is a synonym swap on the same sentence structure, not real de-lexicalization.
+     `PMC13314016`'s paraphrase pulls "by lowering false-positive rates" from elsewhere in the
+     paragraph into the question itself, leaking the answer, something the lexical query (which
+     doesn't do this) shows the model can avoid when the stem doesn't tempt it to elaborate.
+  3. **A tautology sub-shape the "announces a topic without stating a finding" rule doesn't
+     catch (1 of 15).** `PMC10859687`'s paragraph states "a systematic analysis... has been
+     lacking"; the generated query asks "what systematic analysis is missing," reconstructing the
+     gap statement as if it were an answerable fact. The existing rule catches a paragraph that
+     states nothing; it does not yet catch one that states an absence and gets asked about as a
+     presence.
+  4. **A groundedness/answer-boundary issue (1 of 15), unrelated to specificity.** `PMC6280671`'s
+     query asks which cell lines show a co-occurrence; the reviewer found the gold span does not
+     clearly name them. Worth checking against `answer_quote` directly before assuming this is a
+     generation defect rather than a paragraph-boundary one.
+- **An open, cheaper hypothesis not yet ruled out: was `--df-table` even passed on this run?**
+  `MAX_RAREST_TERM_DF`'s specificity check is opt-in (off with a `[warn]` line unless
+  `--df-table` is given) and the row schema stores no field recording whether it ran. If this
+  batch was generated without it, most of pattern 1 above could be the known, already-understood
+  "no specificity check" failure mode from the 2026-09-05 experiment, not a new prompt-design gap.
+  Confirm this before writing a new mechanical rule for something the existing one already covers.
+- **What this changes:** the previous entry's claim that v4 "did not measurably reduce the defect
+  rate" is retracted. v4 has not had a fair test. Recommended before any further prompt iteration:
+  (a) confirm `--df-table eval/runs/doc_freq_paragraph.json` was/is used, (b) generate a batch of
+  at least ~20-30 fresh paragraphs under v4 specifically (not resumed into a file where they'll be
+  a small minority of any future sample), (c) worksheet and review *that* batch on its own before
+  drawing any conclusion about the deictic-subject fix, separately from pattern 1's genericness
+  question, which may be a `--df-table` bug rather than a prompt bug.
+
+**Addendum, same session: the `--df-table` hypothesis is checked and ruled out.** Ran
+`rarest_term_df` from `eval/build_retrieval_set.py` against `eval/runs/doc_freq_paragraph.json`
+(the real 344,900-paragraph table) for the pattern-1 queries above. Every one passes the existing
+`MAX_RAREST_TERM_DF = 1000` gate comfortably: "FRET signal value" df=51, "NOS score" df=333/36,
+"adenoid cystic carcinoma... salivary gland" df=93, "Austrian... nationwide cohort" df=66,
+"Addgene... p53 plasmids" df=420. So this is not a missed `--df-table` flag; the check would not
+have caught these even running correctly.
+
+**Why not, precisely: single-term corpus frequency is not the same question as "does this
+uniquely identify one paragraph."** A term like "adenoid cystic carcinoma" is genuinely rare as a
+string (93 of 344,900 paragraphs), but it names a disease category that recurs across many
+structurally-similar case-series and methods paragraphs, each answerable by the same *shape* of
+question ("how many cases of X were found among the cohort"). The gate checks whether a term is
+rare; it cannot check whether the paragraph built around that rare term is doing something a
+sibling paragraph, on the same rare topic, does too. That is a real gap in the mechanical
+filters, not an operational miss, and it is the dominant remaining defect shape (9-10 of 15 in
+this batch). Recommendation (b) and (c) above still stand for testing v4; this finding is a
+separate, now-confirmed lead for a v5 rule, logged rather than acted on immediately.
+
+---
+
+## Design decision: specificity_margin, a BM25-margin check for the genericness defect (b)
+
+**Date:** 2026-09-08, phase C. Logged before building, per the standing rule. Follow-up to "v3's
+real defect rate, measured": the dominant defect (9-10 of 15 in that review) is a query whose
+anchors are real, verbatim, on-topic terms that name a recurring category ("NOS score", "Addgene
+p53 plasmids") rather than the paragraph's paper-unique details. Confirmed this is not
+`rarest_term_df` catching a bug: every one of those queries passes `MAX_RAREST_TERM_DF = 1000`
+comfortably (df 51-420). Confirmed with the user: fix it with a mechanical check that reuses the
+retriever itself, not an LLM judge (extra cost, re-introduces "the model grades itself") and not a
+prompt-only nudge (the deictic-subject rule already showed a prompt instruction alone doesn't
+reliably survive contact with a real batch).
+
+- **The mechanism.** `specificity_margin(query, gold_span, para_index)`: search a
+  paragraph-granular BM25 index (`retrieval.chunker.paragraph_chunks`, matching this eval set's
+  own one-paragraph-one-gold-span granularity) and compare the gold paragraph's score against the
+  best-scoring paragraph from a DIFFERENT article. A term can be a rare string while naming a
+  recurring category; the retriever sees past that because it scores every paragraph sharing the
+  query's vocabulary, not one token's corpus frequency. This is the same logic
+  `score_retrieval.py --measure-holes` already runs (an LLM judge on top non-gold hits, measuring
+  the residual after the fact); this moves an approximation of it earlier, to generation time, and
+  makes it mechanical rather than another LLM call.
+- **Reused, not rebuilt:** `retrieval.bm25.BM25Index.search`, `Chunk.span()`,
+  `common.corpus_text.spans_overlap`, and the paragraph-granular index already built for the phase
+  D chunk-dilution measurement (`eval/runs/bm25_index_paragraph.pkl`).
+
+- **Calibration, against data that already existed, before writing a single new query.** Both
+  worksheets are human-labeled ground truth for exactly this (`eval/retrieval_worksheet.md` n=20,
+  `eval/retrieval_worksheet_v4.md` n=50): real queries, real gold spans, a person's valid/wrong
+  verdict. `--calibrate-specificity` joins verdicts back to `eval/runs/retrieval_cases_v3.jsonl`
+  by `paragraph_id` and reports the margin distribution split by verdict. Zero API calls.
+- **First result: applied to both query styles, the check would have been net-harmful.** It
+  rejected 36 of 72 known-VALID query-rows (50%) at every threshold tried, while catching 29-31 of
+  36 known-wrong ones (81-86%). Splitting by style found why: valid *lexical* queries have median
+  margin +0.27, but valid *paraphrased* queries median **-0.12**, worse than most WRONG lexical
+  queries (-0.04). The paraphrased style is deliberately de-lexicalized (the prompt: "share as few
+  words with the paragraph as possible"), so it scores lower against its own gold paragraph by
+  construction, regardless of specificity. A margin check that does not know this rejects good
+  paraphrases as if they were generic queries. This is exactly the kind of thing calibrating
+  against real labeled data catches before it costs a wasted generation batch; discovered here,
+  not after a batch was already spent finding it out.
+- **Fix: check only the lexical query.** Genericness is a property of the fact/paragraph pairing,
+  not of a particular style's wording, so checking the style that isn't handicapped by
+  de-lexicalization is enough to gate both rows written from the same paragraph. Restricted to
+  lexical queries, 90 human-reviewed rows (36 valid, 18 wrong paragraphs; 12 of the original 20+50
+  = 70 reviewed paragraphs were not found in the current draft file, having been dropped during
+  the v2 cleanup, so this calibration is smaller than the full reviewed set): `rank > 5 or margin
+  < 0.0` rejects 8/36 (22%) of known-valid rows and 11/18 (61%) of known-wrong ones. Not a clean
+  separator, no threshold tried was, but a real, bounded, honestly-reported tradeoff, unlike the
+  both-styles version.
+- **Thresholds set on that basis:** `MAX_GENERIC_RANK = 5`, `MIN_SPECIFICITY_MARGIN = 0.0`.
+  `margin < 0.0` reads plainly: reject when a different paper's paragraph literally outscores the
+  paper this query was written from. Not tuned to hit a target pass rate, matching
+  `MAX_RAREST_TERM_DF`'s own precedent.
+- **What changed because of this:** `eval/build_retrieval_set.py` gains `specificity_margin`, the
+  `--para-index` / `--no-para-index` CLI, and the two threshold constants; `PROMPT_VERSION` bumps
+  to `retrieval_qgen_v5` (the gate changed even though the prompt text did not, same precedent as
+  v3 -> v4). `eval/tests/test_build_retrieval_set.py` gains `TestSpecificityMargin`, a
+  hand-built 11-chunk synthetic index (one gold paragraph naming a unique term, ten near-duplicate
+  siblings sharing only the generic vocabulary) chosen because a single sibling still let the gold
+  paragraph win on length normalization alone and proved nothing; real generic paragraphs in this
+  corpus have hundreds of siblings, not one.
+- **Deliberately not addressed in this pass:** the two smaller patterns from the same review
+  (paraphrase-quality failures, 3/15; the gap-statement tautology sub-shape, 1/15). Bundling them
+  into this version would muddy attribution in the validation batch that follows. Logged as open
+  findings for a later round.
+- **Next:** a fresh, bounded batch generated under v5 to its own file (not resumed into the mixed
+  `retrieval_cases_v3.jsonl`), worksheeted and reviewed on its own. This is the first fair test of
+  BOTH the deictic-subject rule (v4, never yet properly measured: of 111 paragraphs in the current
+  draft only 3 are v4-stamped) and this margin check, together, per the user's own framing of the
+  two-part fix.
+
+---
+
+## Experiment: v5 batch, n=6 (too small to read as a rate, consistent with calibration's own limits)
+
+**Date:** 2026-09-08, phase C. Run by the user directly; logged here after the fact rather than
+before, which is itself worth naming: the standing rule is prediction-before-running, and this
+entry's "prediction" is reconstructed from what `eval/README.md`'s runbook already said before the
+run (pooled ~31% baseline, n=67; a rate change would need a much larger n than turned out to be
+achievable here to read confidently). Real MDE and pre-registration should precede the next batch,
+not this write-up.
+
+- **Result: 3/6 wrong (50%), 95% CI [19%, 81%]**, all 6 genuinely `retrieval_qgen_v5`-stamped (no
+  provenance mixing this time, unlike the last worksheet). **The real news is the yield, not the
+  rate**: only 6 of an attempted 30 paragraphs were accepted, ~20%, down hard from v3/v4's 74%.
+  `specificity_margin` is a much more expensive gate than its calibration alone predicted (that
+  calibration measured catch/false-positive rates on already-generated content, not the resulting
+  acceptance rate on a fresh sample). Finishing the build under v5 costs roughly 3.5x the
+  generation calls per accepted paragraph that v3/v4 did.
+- **The rate itself is uninformative at n=6** (CI spans from below the old baseline to above it)
+  but reading the three actual wrong cases is not, because none of them is a surprise:
+  - `PMC8584247` (margin 0.044) and `PMC10993710` (margin 0.084) both pass the `margin >= 0.0`
+    gate, but barely. This is exactly the calibration's documented ~39% miss rate showing up, not
+    a new failure: the check was never expected to catch everything, and a borderline pass is what
+    a miss looks like.
+  - `PMC10993710` also still carries v4's target defect in its paraphrase ("in this Japanese
+    cohort" the reviewer still calls vague) and its lexical query ("in the study"). One prompt
+    rule reducing but not eliminating a pattern is consistent with the deictic-subject fix's own
+    original framing; it was never claimed to be airtight.
+  - `PMC9582144` ("C2 subtype" with no classification system named, margin 0.175, comfortably
+    clears the gate) is the one genuinely informative case: a **domain-ambiguity failure a
+    corpus-local margin check cannot see by construction**. "C2 subtype" may be locally
+    unambiguous in this specific 7,863-article corpus (nothing else scores close), while still
+    being a real-world ambiguous term across multiple unrelated cancer molecular classification
+    schemes. This is the same shape as the "FRET signal value" example that motivated
+    `specificity_margin` in the first place, and it is a structural ceiling, not a tuning miss: no
+    threshold on this corpus's own BM25 scores can detect an ambiguity that depends on knowledge
+    outside the corpus.
+- **Did the (reconstructed) prediction hold?** Inconclusive, honestly, not rounded to a direction.
+  n=6 cannot distinguish "no improvement" from "the true rate dropped to 20% and this sample is
+  unlucky." What is not inconclusive: the yield cost is real and now measured, and the residual
+  failure taxonomy at this n is fully explained by limits already on record before this batch ran,
+  which is a good sign for the check's honesty, not a bad sign for its effectiveness.
+- **What changed because of this:** nothing in `build_retrieval_set.py` — three cases is not
+  evidence to re-tune a threshold against, and doing so would be fitting noise. Two things worth
+  deciding before spending more budget, not decided here: (a) whether a ~20% acceptance rate
+  changes the plan for finishing phase C's ~165-paragraph target (it roughly triples the attempts,
+  and therefore the generation calls, needed), and (b) whether `specificity_margin`'s structural
+  blind spot (locally-unique, globally-ambiguous terms) is worth a further mechanical fix or is an
+  accepted residual for human review to keep catching.
+
+## Design decision: review fixes for evidence text and retrieval failures
+
+**Date:** 2026-09-09. Logged before implementation.
+
+- Return the complete retrieved chunk so the service's text matches its cited source offsets.
+  A 500-character preview can omit the evidence that caused a retrieval hit.
+- Emit an NDJSON error with code `deadline` when retrieval exceeds its deadline, followed by
+  the existing summary. A timeout is not evidence of absence. This is still an elapsed-time
+  check after search, not cancellation; admission control and cooperative cancellation remain open.
+- Have the load tester require a terminal summary and reject error/deadline streams, including
+  HTTP 200 responses. Otherwise a failed search counts as successful throughput.
+- Preserve non-reference children inside superscripts during presentation cleanup. Only a
+  superscript made entirely of bibliographic references and separators can be dropped wholesale.
+- Validate with synthetic regression tests, with no paid calls or performance experiment.
+  The BM25-based query-selection policy and clustered evaluation intervals remain discussion
+  items, not changes to the scorer or labels in this review.
+
+## Design decision: implement the review's foundation and cleanup
+
+**Date:** 2026-09-09. User authorized implementing the reviewed plan.
+
+Adopt the five-milestone roadmap, with optional infrastructure labs. Preserve the old plan and
+status as local historical documents. Keep private job-search material ignored; publish sanitized
+setup, task, architecture and current status. Preserve existing run outputs and human worksheets
+in a checksummed snapshot before removing the obsolete index. Historical registry collisions
+cannot be repaired by inventing original inputs.
+
+Implement complete dependency declarations, offline CI, explicit dataset selection, strict model
+field validation, run artifact snapshots and input hashes, ingestion resume metadata preservation,
+and evaluation exclusions that index construction can apply without relying on missing XML.
+Remove only the unused ParseError declaration and the obsolete PRE_UNIFICATION index after
+recording its hash. Do not change human labels or run paid experiments. Scorer-policy changes
+are being discussed with the user; pending that discussion, preserve the current rubric and make
+remaining limitations visible. Validate changes with synthetic offline tests, not new results claims.
+
+**Scorer discussion resolved:** the user approved keeping invalid citations as failures in the
+denominator, rejecting incomplete/rejected release inputs, and requiring explicit exploratory
+mode for unreviewed cases. Apply these rules without changing any human labels. Claim coverage
+across free-form answer text and representative sampling still need future rubric work.
+
+**Implementation outcome:** the cleanup/foundation changes pass 342 offline tests in vader_env;
+`git diff --check` is clean. Verified checksums on all 32 preserved historical artifacts and the
+18-query subset selected solely from existing valid human verdicts. No new labels, quality
+estimates, load measurements or paid inference were produced. Remaining engineering and human
+validation work is enumerated in CURRENT_STATUS.md; milestones 2-5 are not marked complete.
+
+### 2026-09-09: Bounded runtime synthesis
+
+Move the existing model client and baseline answer helpers to common so serving never imports
+evaluation code. Preserve offline prompts and scorer behavior. Add an opt-in POST /answer JSON
+endpoint beside retrieval NDJSON. Reuse the excerpt prompt with a system instruction treating
+source text as untrusted data. Validate response types, vocabulary, abstention consistency and
+citation indices before returning any generated answer. Valid indices establish provenance,
+not semantic support; human calibration and claim coverage remain open.
+
+Use one async provider call, no retries, a total provider timeout, a completion-token limit and
+a bounded response body. Limit context to complete chunks within a character budget, skipping
+oversized chunks without altering source offsets. Reject concurrent excess requests immediately
+using a per-process counter. Retrieval retains its cooperative deadline. Return separate HTTP
+errors for provider failure, invalid output and timeout. Return JSON after validation; token
+streaming is deferred because unvalidated partial output is not a usable evidence brief.
+
+Enable generation explicitly in local configuration. Log trace ID, timing and outcome without
+query text for this new endpoint. No provider call, quality experiment or deployment is part of
+this implementation validation. Verify with injected HTTP transports and a synthetic corpus.
+Groq's API reference specifies max_completion_tokens: https://console.groq.com/docs/api-reference.
+
+**Runtime implementation outcome:** shared transport/prompts now live in common. The opt-in
+answer endpoint returns validated JSON with canonical citations, bounded context/provider work
+and per-process admission. All 353 offline tests pass in vader_env; diff whitespace checks pass.
+No live model call or benchmark ran. Semantic support, answer-text claim coverage, immediate
+client-disconnect detection, global quotas and the researcher interface remain open as recorded
+in CURRENT_STATUS.md. Retrieval behavior remains separately measurable through /query.

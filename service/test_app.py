@@ -11,12 +11,16 @@ import unittest
 
 import csv
 import json
+import os
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from service.app import create_app
+from common.corpus_text import Chunk
+from retrieval.bm25 import index_from_chunks
 
 ARTICLES = {
     "PMC1000001": {
@@ -94,7 +98,29 @@ class TestService(unittest.TestCase):
         r = client.get("/healthz")
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["corpus_size"], 4, r.json())
+        self.assertGreater(r.json()["index_chunks"], 0, "BM25 index built at startup")
         self.assertEqual(r.json()["config"]["max_scan"], 7, r.json())
+
+    def test_query_writes_a_retrieve_trace_span(self):
+        """Phase E wires common.trace into the request path (DECISION_LOG.md,
+        the phase D/E service rewrite). This is also the regression test for
+        the contextvars bug the first version of this wiring hit: a
+        `trace_request` that stayed open across multiple StreamingResponse
+        `next()` calls raised "Token ... created in a different Context"."""
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        trace_file = tmp / "spans.jsonl"
+        prev = os.environ.get("VADER_TRACE_FILE")
+        os.environ["VADER_TRACE_FILE"] = str(trace_file)
+        self.addCleanup(lambda: os.environ.pop("VADER_TRACE_FILE", None) if prev is None
+                        else os.environ.__setitem__("VADER_TRACE_FILE", prev))
+        client = self.client(max_scan=7, max_matches=3)
+        r, _ = self.query(client, "BRCA1 pathogenic variant breast cancer")
+        self.assertEqual(r.status_code, 200, r.text)
+        spans = [json.loads(l) for l in trace_file.read_text().splitlines() if l.strip()]
+        retrieve = [s for s in spans if s["name"] == "retrieve"]
+        self.assertEqual(len(retrieve), 1, spans)
+        self.assertEqual(retrieve[0]["attributes"]["retriever"], "bm25")
+        self.assertGreaterEqual(retrieve[0]["attributes"]["retrieval.hit_count"], 1)
 
     def test_query_returns_a_match_with_a_source_span(self):
         client = self.client(max_scan=7, max_matches=3)
@@ -106,7 +132,30 @@ class TestService(unittest.TestCase):
         m = matches[0]
         self.assertEqual(m["pmcid"], "PMC1000001", m)
         self.assertTrue(m["char_end"] > m["char_start"] >= 0, m)
-        self.assertLessEqual(len(m["text"]), 500, "match text is truncated to <=500")
+        self.assertEqual(len(m["text"]), m["char_end"] - m["char_start"])
+
+    def test_long_evidence_is_returned_with_matching_offsets(self):
+        client = self.client()
+        text = "Background information. " * 30 + "BRCA1 carriers showed elevated risk."
+        client.app.state.index = index_from_chunks([Chunk(
+            "long", "PMC1000001", text,
+            [{"section": "body", "char_start": 10, "char_end": 10 + len(text)}])])
+        _, lines = self.query(client, "BRCA1")
+        match = lines[0]
+        self.assertEqual(match["text"], text)
+        self.assertEqual(match["char_end"] - match["char_start"], len(text))
+
+    def test_deadline_is_an_error_not_evidence_of_absence(self):
+        client = self.client()
+        def timed_out(query, articles, stats, **kwargs):
+            stats.stopped_reason = "deadline"
+            return iter(())
+        with patch("service.search.search", side_effect=timed_out):
+            _, lines = self.query(client, "BRCA1")
+        self.assertEqual(lines[0]["type"], "error")
+        self.assertEqual(lines[0]["code"], "deadline")
+        self.assertEqual(lines[-1]["type"], "summary")
+        self.assertFalse(any(line["type"] == "not_found" for line in lines))
 
     def test_unrelated_query_reports_not_found(self):
         client = self.client(max_scan=7, max_matches=3)

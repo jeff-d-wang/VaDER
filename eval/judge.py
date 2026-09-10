@@ -100,7 +100,7 @@ class GroqJudge:
     decided Llama 3.3 70B, Groq model drift, discovered running this)."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None):
-        from eval.llm_client import DEFAULT_MODEL, require_api_key
+        from common.llm_client import DEFAULT_MODEL, require_api_key
         self.model = model or DEFAULT_MODEL
         # Fail fast at construction, not on the first grade_* call: refusing
         # to silently fall back to a fake judge, a real score needs a real
@@ -108,20 +108,26 @@ class GroqJudge:
         self.api_key = require_api_key(api_key)
 
     def _call(self, prompt: str) -> dict:
-        from eval.llm_client import groq_chat_json
+        from common.llm_client import groq_chat_json
         return groq_chat_json(prompt, model=self.model, api_key=self.api_key)
 
     def grade_disagreement(self, query, disagreement_note, answer_text):
         out = self._call(_DISAGREEMENT_PROMPT.format(
             query=query, disagreement_note=disagreement_note, answer_text=answer_text,
         ))
+        if out.get("verdict") not in ("pass", "partial", "fail"):
+            raise ValueError("judge verdict must be pass, partial or fail")
+        if not isinstance(out.get("rationale", ""), str):
+            raise ValueError("judge rationale must be text")
         return JudgeResult(out["verdict"], out.get("rationale", ""))
 
     def grade_claim_groundedness(self, claim_text, cited_span_text):
         out = self._call(_GROUNDEDNESS_PROMPT.format(
             claim_text=claim_text, cited_span_text=cited_span_text,
         ))
-        return bool(out["supported"])
+        if type(out.get("supported")) is not bool:
+            raise ValueError("judge supported must be a JSON boolean")
+        return out["supported"]
 
 
 def make_judge(name: str) -> Judge:

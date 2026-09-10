@@ -1,0 +1,377 @@
+{
+  "config": {
+    "retriever": "bm25",
+    "k1": 1.5,
+    "b": 0.75,
+    "top_k": 100,
+    "index": "/Users/jeffwang/VSCode_Workspace/VaDER/eval/runs/bm25_index.pkl",
+    "n_indexed": 193059,
+    "cases": "/Users/jeffwang/VSCode_Workspace/VaDER/eval/data/identifier_cases.jsonl",
+    "n_queries": 30,
+    "git_sha": "7f494ed"
+  },
+  "config_hash": "cfg-90d5a23fbcde",
+  "overall": {
+    "matched": {
+      "value": 0.9333,
+      "ci95": [
+        0.7018,
+        0.9881
+      ],
+      "n": 15,
+      "hits": 14
+    },
+    "mismatched": {
+      "value": 0.0667,
+      "ci95": [
+        0.0119,
+        0.2982
+      ],
+      "n": 15,
+      "hits": 1
+    }
+  },
+  "paired": {
+    "n_pairs": 15,
+    "discordant_matched_only": 13,
+    "discordant_mismatched_only": 0,
+    "mcnemar_p": 0.0002
+  },
+  "by_axis": {
+    "cdna<->cdna": {
+      "matched": {
+        "value": 1.0,
+        "ci95": [
+          0.4385,
+          1.0
+        ],
+        "n": 3,
+        "hits": 3
+      },
+      "mismatched": {
+        "value": 0.0,
+        "ci95": [
+          0.0,
+          0.5615
+        ],
+        "n": 3,
+        "hits": 0
+      }
+    },
+    "cdna<->protein": {
+      "matched": {
+        "value": 0.8333,
+        "ci95": [
+          0.4365,
+          0.9699
+        ],
+        "n": 6,
+        "hits": 5
+      },
+      "mismatched": {
+        "value": 0.0,
+        "ci95": [
+          0.0,
+          0.3903
+        ],
+        "n": 6,
+        "hits": 0
+      }
+    },
+    "cdna<->rsid": {
+      "matched": {
+        "value": 1.0,
+        "ci95": [
+          0.6097,
+          1.0
+        ],
+        "n": 6,
+        "hits": 6
+      },
+      "mismatched": {
+        "value": 0.1667,
+        "ci95": [
+          0.0301,
+          0.5635
+        ],
+        "n": 6,
+        "hits": 1
+      }
+    }
+  },
+  "per_query": [
+    {
+      "query_id": "PMC3555982:body:7489#matched",
+      "case_id": "PMC3555982:body:7489",
+      "style": "matched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC3555982:body:7489#mismatched",
+      "case_id": "PMC3555982:body:7489",
+      "style": "mismatched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.5,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC5519427:body:22331#matched",
+      "case_id": "PMC5519427:body:22331",
+      "style": "matched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC5519427:body:22331#mismatched",
+      "case_id": "PMC5519427:body:22331",
+      "style": "mismatched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.6667,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC11846000:body:10590#matched",
+      "case_id": "PMC11846000:body:10590",
+      "style": "matched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.75,
+      "hit": true,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11846000:body:10590#mismatched",
+      "case_id": "PMC11846000:body:10590",
+      "style": "mismatched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.3333,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC3326673:abstract:542#matched",
+      "case_id": "PMC3326673:abstract:542",
+      "style": "matched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3326673:abstract:542#mismatched",
+      "case_id": "PMC3326673:abstract:542",
+      "style": "mismatched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.3333,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC9636515:body:32543#matched",
+      "case_id": "PMC9636515:body:32543",
+      "style": "matched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.75,
+      "hit": false,
+      "rank_of_gold": 14
+    },
+    {
+      "query_id": "PMC9636515:body:32543#mismatched",
+      "case_id": "PMC9636515:body:32543",
+      "style": "mismatched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.3333,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC2092410:abstract:0#matched",
+      "case_id": "PMC2092410:abstract:0",
+      "style": "matched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.6667,
+      "hit": true,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC2092410:abstract:0#mismatched",
+      "case_id": "PMC2092410:abstract:0",
+      "style": "mismatched",
+      "notation_axis": "cdna<->protein",
+      "lexical_overlap": 0.25,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC12011969:body:24806#matched",
+      "case_id": "PMC12011969:body:24806",
+      "style": "matched",
+      "notation_axis": "cdna<->cdna",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC12011969:body:24806#mismatched",
+      "case_id": "PMC12011969:body:24806",
+      "style": "mismatched",
+      "notation_axis": "cdna<->cdna",
+      "lexical_overlap": 0.6667,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC10883683:body:2631#matched",
+      "case_id": "PMC10883683:body:2631",
+      "style": "matched",
+      "notation_axis": "cdna<->cdna",
+      "lexical_overlap": 0.6667,
+      "hit": true,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC10883683:body:2631#mismatched",
+      "case_id": "PMC10883683:body:2631",
+      "style": "mismatched",
+      "notation_axis": "cdna<->cdna",
+      "lexical_overlap": 0.3333,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC11949239:body:23456#matched",
+      "case_id": "PMC11949239:body:23456",
+      "style": "matched",
+      "notation_axis": "cdna<->cdna",
+      "lexical_overlap": 0.6667,
+      "hit": true,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC11949239:body:23456#mismatched",
+      "case_id": "PMC11949239:body:23456",
+      "style": "mismatched",
+      "notation_axis": "cdna<->cdna",
+      "lexical_overlap": 0.3333,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC7736877:body:5741#matched",
+      "case_id": "PMC7736877:body:5741",
+      "style": "matched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.6667,
+      "hit": true,
+      "rank_of_gold": 5
+    },
+    {
+      "query_id": "PMC7736877:body:5741#mismatched",
+      "case_id": "PMC7736877:body:5741",
+      "style": "mismatched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.3333,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC8286662:body:10553#matched",
+      "case_id": "PMC8286662:body:10553",
+      "style": "matched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8286662:body:10553#mismatched",
+      "case_id": "PMC8286662:body:10553",
+      "style": "mismatched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.5,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC12522356:body:57388#matched",
+      "case_id": "PMC12522356:body:57388",
+      "style": "matched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12522356:body:57388#mismatched",
+      "case_id": "PMC12522356:body:57388",
+      "style": "mismatched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.6667,
+      "hit": true,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4014567:body:3293#matched",
+      "case_id": "PMC4014567:body:3293",
+      "style": "matched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.6667,
+      "hit": true,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4014567:body:3293#mismatched",
+      "case_id": "PMC4014567:body:3293",
+      "style": "mismatched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.5,
+      "hit": false,
+      "rank_of_gold": 41
+    },
+    {
+      "query_id": "PMC7141151:body:12819#matched",
+      "case_id": "PMC7141151:body:12819",
+      "style": "matched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.5,
+      "hit": true,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC7141151:body:12819#mismatched",
+      "case_id": "PMC7141151:body:12819",
+      "style": "mismatched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.0,
+      "hit": false,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC5341838:abstract:522#matched",
+      "case_id": "PMC5341838:abstract:522",
+      "style": "matched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 1.0,
+      "hit": true,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC5341838:abstract:522#mismatched",
+      "case_id": "PMC5341838:abstract:522",
+      "style": "mismatched",
+      "notation_axis": "cdna<->rsid",
+      "lexical_overlap": 0.6667,
+      "hit": false,
+      "rank_of_gold": 18
+    }
+  ],
+  "meta": {
+    "search_ms_per_query": 60.0
+  }
+}

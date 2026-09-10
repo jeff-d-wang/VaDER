@@ -7,9 +7,9 @@
 # Fields set to `none` are machinery that does not exist yet. They are named now
 # so a later phase fills a value rather than adding a key.
 
-chunker: none          # phase D: hand-written structure-aware JATS chunker
+chunker: structure_aware  # retrieval/chunker.py: merge paragraphs within a section+<sec>, 350-token target
 embedder: none         # tier 2: bge-small-en-v1.5, local CPU
-index: bm25            # phase D: BM25 over chunks; tier 2 adds Qdrant
+index: bm25            # phase D: BM25 over chunks (postings list); tier 2 adds Qdrant
 retriever: bm25
 reranker: none         # tier 2
 

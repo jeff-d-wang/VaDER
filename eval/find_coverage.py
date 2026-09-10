@@ -205,7 +205,7 @@ def scan_corpus(manifest_path: Path, xml_dir: Path, termsets: list, workers: int
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--corpus-dir", default=os.environ.get("VADER_CORPUS_DIR", "../corpus"),
+    ap.add_argument("--corpus-dir", default=os.environ.get("VADER_CORPUS_DIR", str(Path(__file__).resolve().parent.parent / "corpus")),
                      help="directory with manifest.csv and xml/ (default ../corpus, or $VADER_CORPUS_DIR)")
     ap.add_argument("--term-sets-csv", help="CSV with columns pair_id,genes,variants,conditions (each ';'-separated)")
     ap.add_argument("--pair-id", help="single-pair mode: an id for this pair")
