@@ -19,7 +19,8 @@ Offline eval -> retrieval + common -> per-case outputs -> immutable artifact bun
 The HTTP service builds the index at startup. `/query` streams complete retrieved chunks;
 opt-in `/answer` retrieves bounded context and calls the async client in `common/llm_client.py`.
 `common/answer.py` shares the unchanged baseline prompts and mapping with offline evaluation,
-and adds strict runtime validation. Serving does not import eval, its judge or gold labels.
+and adds strict runtime validation. Runtime display text is rendered from the validated claims.
+Serving does not import eval, its judge or gold labels.
 The synchronous offline client retains its historical retry policy; serving makes one bounded
 async call. Model output is returned only after validation, with canonical source citations.
 

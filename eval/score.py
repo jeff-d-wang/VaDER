@@ -96,12 +96,35 @@ class PropertyScore:
 
 
 @dataclass
+class CoverageUnit:
+    text: str
+    covered_by_claim: Optional[int]
+    critical: bool
+
+    @staticmethod
+    def from_dict(value: dict, answer: SystemAnswer) -> "CoverageUnit":
+        if (not isinstance(value, dict) or not isinstance(value.get("text"), str)
+                or not value["text"].strip()):
+            raise ValueError("each coverage unit needs non-empty text")
+        critical = value.get("critical")
+        if type(critical) is not bool:
+            raise ValueError("coverage critical must be a JSON boolean")
+        claim_number = value.get("covered_by_claim")
+        if claim_number is not None and (
+            type(claim_number) is not int or not 1 <= claim_number <= len(answer.claims)
+        ):
+            raise ValueError("covered_by_claim must be null or a valid 1-based claim number")
+        return CoverageUnit(value["text"].strip(), claim_number, critical)
+
+
+@dataclass
 class CaseScore:
     case_id: str
     stratum: str
     direction: Optional[PropertyScore] = None
     strength: Optional[PropertyScore] = None
     groundedness: Optional[PropertyScore] = None
+    claim_coverage: Optional[PropertyScore] = None
     disagreement: Optional[PropertyScore] = None
     not_found: Optional[PropertyScore] = None
 
@@ -140,6 +163,28 @@ def score_groundedness(answer: SystemAnswer, judge: Judge, xml_dir: Path) -> Pro
     if problems:
         rationale += f"; unresolvable citations: {'; '.join(problems)}"
     return PropertyScore(verdict, rationale)
+
+
+def score_claim_coverage(answer: SystemAnswer, units: list[CoverageUnit]) -> PropertyScore:
+    """Grade human-annotated factual units against the submitted claim list."""
+    if not units and (answer.not_found or _refuses(answer.answer_text)):
+        return PropertyScore(None, "not applicable to an abstention")
+    if not units:
+        return PropertyScore("fail", "no factual coverage units annotated", note="empty_units")
+    uncovered = [unit for unit in units if unit.covered_by_claim is None]
+    critical = [unit for unit in uncovered if unit.critical]
+    rate = (len(units) - len(uncovered)) / len(units)
+    if not uncovered:
+        verdict = "pass"
+    elif rate >= 0.80 and not critical:
+        verdict = "partial"
+    else:
+        verdict = "fail"
+    return PropertyScore(
+        verdict,
+        f"{len(units) - len(uncovered)}/{len(units)} factual units represented ({rate:.0%}); "
+        f"{len(critical)} critical omission(s)",
+    )
 
 
 def score_direction(case: dict, answer: SystemAnswer) -> PropertyScore:
@@ -185,7 +230,8 @@ def score_not_found(case: dict, answer: SystemAnswer) -> PropertyScore:
     )
 
 
-def score_case(case: dict, answer: SystemAnswer, judge: Judge, xml_dir: Path = XML_DIR) -> CaseScore:
+def score_case(case: dict, answer: SystemAnswer, judge: Judge, xml_dir: Path = XML_DIR,
+               coverage_units: list[CoverageUnit] | None = None) -> CaseScore:
     stratum = case["stratum"]
     result = CaseScore(case_id=case["case_id"], stratum=stratum)
 
@@ -193,6 +239,8 @@ def score_case(case: dict, answer: SystemAnswer, judge: Judge, xml_dir: Path = X
     gold = case["gold"]
 
     result.not_found = score_not_found(case, answer)
+    if coverage_units is not None:
+        result.claim_coverage = score_claim_coverage(answer, coverage_units)
 
     if is_negative:
         # direction/strength and disagreement don't apply: there's nothing
@@ -215,15 +263,32 @@ def load_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
+def load_coverage_labels(path: Path, answers: dict[str, SystemAnswer]) -> dict[str, list[CoverageUnit]]:
+    labels = {}
+    for row in load_jsonl(path):
+        case_id = row.get("case_id")
+        if not isinstance(case_id, str) or case_id not in answers:
+            raise ValueError(f"coverage row has unknown case_id: {case_id!r}")
+        if case_id in labels:
+            raise ValueError(f"duplicate coverage row: {case_id}")
+        units = row.get("units")
+        if not isinstance(units, list):
+            raise ValueError(f"coverage units must be a list: {case_id}")
+        labels[case_id] = [CoverageUnit.from_dict(unit, answers[case_id]) for unit in units]
+    return labels
+
+
 def summarize(scores: list[CaseScore]) -> dict:
     """Per-property pass rate, N/A cases excluded from the denominator.
     Deliberately not a single blended score: DECISION_LOG.md's rubric entry
     rejected a holistic pass/fail specifically so a property's failure
     doesn't hide behind the others."""
-    properties = ["direction", "strength", "groundedness", "disagreement", "not_found"]
+    properties = ["direction", "strength", "groundedness", "claim_coverage",
+                  "disagreement", "not_found"]
     summary = {}
     for prop in properties:
-        verdicts = [getattr(s, prop).verdict for s in scores if getattr(s, prop) is not None]
+        verdicts = [getattr(s, prop).verdict for s in scores
+                    if getattr(s, prop) is not None and getattr(s, prop).verdict is not None]
         n = len(verdicts)
         if n == 0:
             continue
@@ -247,8 +312,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", default=str(CASES_PATH))
     parser.add_argument("--xml-dir", default=str(XML_DIR))
     parser.add_argument("--out", help="write full per-case results as JSON here")
+    parser.add_argument("--coverage-labels",
+                        help="human JSONL mapping factual answer units to submitted claims")
     parser.add_argument("--exploratory", action="store_true",
-                        help="allow unreviewed cases and missing answers; not release evidence")
+                        help="allow unreviewed cases and incomplete answers/coverage; not release evidence")
     parser.add_argument("--held-out", choices=["exclude", "include", "only"], default="exclude",
                          help="exclude (default, safe): dev split only. include/only: also or "
                               "only score the held-out split, requires --touch-reason and is "
@@ -269,6 +336,12 @@ def main(argv: list[str] | None = None) -> int:
         cases = {cid: c for cid, c in cases.items()
                  if split.get(cid, "dev") == wanted_split}
     answers = {a["case_id"]: SystemAnswer.from_dict(a) for a in load_jsonl(Path(args.answers))}
+    try:
+        coverage = (load_coverage_labels(Path(args.coverage_labels), answers)
+                    if args.coverage_labels else {})
+    except ValueError as exc:
+        print(f"Invalid coverage labels: {exc}", file=sys.stderr)
+        return 2
     judge = make_judge(args.judge)
 
     if args.held_out != "exclude":
@@ -280,11 +353,14 @@ def main(argv: list[str] | None = None) -> int:
               f"this is touch #{n_touches}.{warn}\n", file=sys.stderr)
 
     missing = set(cases) - set(answers)
-    rejected = [cid for cid, case in cases.items() if case.get("validation_verdict") == "wrong"]
+    rejected = [cid for cid, case in cases.items()
+                if case.get("validation_verdict") in ("wrong", "rejected")]
     unreviewed = [cid for cid, case in cases.items() if not case.get("validated_by")]
-    if rejected or (not args.exploratory and (missing or unreviewed)):
+    missing_coverage = set(cases) - set(coverage)
+    if rejected or (not args.exploratory and (missing or unreviewed or missing_coverage)):
         print(f"Refusing release scoring: rejected={len(rejected)}, unreviewed={len(unreviewed)}, "
-              f"missing answers={len(missing)}. Review cases or use --exploratory for unreviewed inputs.",
+              f"missing answers={len(missing)}, missing coverage labels={len(missing_coverage)}. "
+              "Review inputs or use --exploratory for incomplete inputs.",
               file=sys.stderr)
         return 2
     if missing:
@@ -295,7 +371,8 @@ def main(argv: list[str] | None = None) -> int:
     for case_id, case in cases.items():
         if case_id not in answers:
             continue
-        scores.append(score_case(case, answers[case_id], judge, Path(args.xml_dir)))
+        scores.append(score_case(case, answers[case_id], judge, Path(args.xml_dir),
+                                 coverage.get(case_id)))
 
     summary = summarize(scores)
     print(f"Judge: {args.judge}. Scored {len(scores)}/{len(cases)} cases.\n")
@@ -319,13 +396,18 @@ def main(argv: list[str] | None = None) -> int:
         from common.run_meta import append_run, file_hash
         payload = {"summary": summary, "cases": [asdict(s) for s in scores],
                    "exploratory": args.exploratory, "judge": args.judge,
-                   "expected_cases": len(cases), "missing_answers": sorted(missing)}
+                   "expected_cases": len(cases), "missing_answers": sorted(missing),
+                   "missing_coverage_labels": sorted(missing_coverage)}
         Path(args.out).write_text(json.dumps(payload, indent=2))
         append_run(eval_set="answer_scores", results_path=args.out, metrics=summary,
                    run_config={"judge": args.judge, "exploratory": args.exploratory,
                                "cases_sha256": file_hash(Path(args.cases)),
-                               "answers_sha256": file_hash(Path(args.answers))},
-                   input_paths={"cases": Path(args.cases), "answers": Path(args.answers)})
+                               "answers_sha256": file_hash(Path(args.answers)),
+                               "coverage_labels_sha256": (file_hash(Path(args.coverage_labels))
+                                                          if args.coverage_labels else None)},
+                   input_paths={"cases": Path(args.cases), "answers": Path(args.answers),
+                                **({"coverage_labels": Path(args.coverage_labels)}
+                                   if args.coverage_labels else {})})
         print(f"\nWrote {args.out}")
 
     return 0

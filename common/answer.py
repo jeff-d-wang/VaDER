@@ -1,5 +1,9 @@
 """Shared baseline prompts and source-citation mapping."""
 
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
 # The vocabulary halves must match eval/labels.py's DIRECTIONS and STRENGTHS
 # exactly. An answer outside the vocabulary is graded off-vocabulary and
 # fails, so a drift here would look like a model failure.
@@ -24,6 +28,26 @@ Respond with strict JSON:
   ]
 }}
 Every entry in "claims" must reference the excerpt number (1-indexed into the list above) that actually supports it. Do not cite an excerpt number that doesn't exist."""
+
+RUNTIME_PROMPT = """Answer a cancer-genomics evidence question using ONLY the excerpts below.
+If they do not establish an answer, abstain. Split the answer into atomic factual claims. Preserve
+material variant, condition, direction, magnitude, population, time and uncertainty qualifiers.
+For conflicting evidence, write a separate source-specific claim for each side.
+
+Question: {query}
+
+Excerpts:
+{excerpts}
+
+Respond with strict JSON:
+{{
+  "direction": "increased | decreased | none | mixed",
+  "strength": "high | moderate | low | none | disputed | unstated",
+  "not_found": true if the excerpts do not establish an answer, else false,
+  "claims": [{{"text": "one atomic factual proposition", "excerpt_index": 1}}]
+}}
+For not_found=true, return empty claims, direction=none and strength=unstated. Otherwise include
+at least one claim. Every claim must cite one supporting excerpt by its 1-based number."""
 
 NO_CONTEXT_PROMPT = """You are answering a question about cancer genomics variant-disease evidence,
 from your own training knowledge only. You have no access to any external documents or search.
@@ -87,11 +111,6 @@ def answer_from(case: dict, out: dict, claims: list[dict]) -> dict:
     }
 
 
-
-from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
-
-
 class RuntimeClaim(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", str_strip_whitespace=True)
     text: str = Field(min_length=1, max_length=2000)
@@ -103,21 +122,32 @@ class RuntimeAnswer(BaseModel):
     direction: Literal["increased", "decreased", "none", "mixed"]
     strength: Literal["high", "moderate", "low", "none", "disputed", "unstated"]
     not_found: bool
-    answer_text: str = Field(min_length=1, max_length=6000)
     claims: list[RuntimeClaim] = Field(max_length=20)
 
 
+def render_runtime_claims(claims: list[dict]) -> str:
+    """Render only validated claims, retaining their model-selected evidence numbers."""
+    sentences = []
+    for claim in claims:
+        text = claim["text"].strip()
+        if text[-1] in ".!?":
+            text = text[:-1]
+        sentences.append(f"{text} [{claim['excerpt_index']}].")
+    return " ".join(sentences)
+
+
 def validate_runtime_answer(out: dict, excerpts: list[tuple[dict, str]]) -> dict:
-    """Reject malformed serving output. Offline scoring retains invalid citations."""
+    """Reject malformed output and render display text from canonical claims."""
     parsed = RuntimeAnswer.model_validate(out).model_dump()
     if any(claim["excerpt_index"] > len(excerpts) for claim in parsed["claims"]):
         raise ValueError("claim cites an unavailable excerpt")
     if parsed["not_found"]:
         if parsed["claims"] or parsed["direction"] != "none" or parsed["strength"] != "unstated":
             raise ValueError("abstention contradicts claims or labels")
-        # Do not display free-form factual assertions in an abstention.
         parsed["answer_text"] = "The retrieved excerpts do not establish an answer to this question."
     elif not parsed["claims"]:
         raise ValueError("an answer requires cited claims")
+    else:
+        parsed["answer_text"] = render_runtime_claims(parsed["claims"])
     parsed["claims"] = map_claims(parsed["claims"], excerpts)
     return parsed

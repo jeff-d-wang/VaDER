@@ -48,7 +48,7 @@ from pydantic import BaseModel, Field
 import anyio
 import httpx
 
-from common.answer import EXCERPT_PROMPT, format_excerpts, validate_runtime_answer
+from common.answer import RUNTIME_PROMPT, format_excerpts, validate_runtime_answer
 from common.llm_client import DEFAULT_MODEL, groq_chat_json_async, require_api_key
 from common.trace import trace_request
 from retrieval.bm25 import build_index
@@ -218,7 +218,7 @@ def create_app(*, manifest_path: Path, xml_dir: Path, log_path: Path,
                             "claims": [], "direction": "none", "strength": "unstated",
                             "evidence": [], "outcome": outcome, "trace_id": trace_id}
                 excerpts = [(item, item["text"]) for item in evidence]
-                prompt = EXCERPT_PROMPT.format(query=req.query, excerpts=format_excerpts(excerpts))
+                prompt = RUNTIME_PROMPT.format(query=req.query, excerpts=format_excerpts(excerpts))
                 raw = await groq_chat_json_async(prompt, api_key=key, timeout_s=generation_timeout_s)
                 result = validate_runtime_answer(raw, excerpts)
                 outcome = "abstained" if result["not_found"] else "answered"

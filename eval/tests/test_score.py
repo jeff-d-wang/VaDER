@@ -18,7 +18,8 @@ import json
 import eval.score as score
 import eval.split as split_mod
 from eval.judge import FakeJudge
-from eval.score import Claim, SystemAnswer, score_case, summarize, wilson_ci
+from eval.score import (Claim, CoverageUnit, SystemAnswer, score_case, score_claim_coverage,
+                        summarize, wilson_ci)
 
 XML_TEMPLATE = """<article>
   <front><article-meta><abstract>
@@ -58,6 +59,27 @@ def make_xml_dir(tmp: str, abstract="BRCA1 pathogenic variants increase breast c
 
 
 class TestScore(unittest.TestCase):
+    def test_claim_coverage_uses_human_units_and_critical_gate(self) -> None:
+        answer = SystemAnswer(
+            case_id="ev1", answer_text="Five factual statements.",
+            claims=[Claim("claim", "PMC1", "abstract", 0, 10)],
+        )
+        covered = CoverageUnit("represented fact", 1, False)
+        ordinary_miss = CoverageUnit("unrepresented detail", None, False)
+        critical_miss = CoverageUnit("unrepresented conclusion", None, True)
+        self.assertEqual(score_claim_coverage(answer, [covered]).verdict, "pass")
+        self.assertEqual(
+            score_claim_coverage(answer, [covered] * 4 + [ordinary_miss]).verdict, "partial")
+        self.assertEqual(
+            score_claim_coverage(answer, [covered] * 4 + [critical_miss]).verdict, "fail")
+        refusal_with_fact = SystemAnswer(
+            case_id="ev1", not_found=True,
+            answer_text="No evidence found, but the variant raises risk.", claims=[],
+        )
+        self.assertEqual(
+            score_claim_coverage(refusal_with_fact, [critical_miss]).verdict, "fail")
+        self.assertIsNone(score_claim_coverage(refusal_with_fact, []).verdict)
+
     def test_evidence_pass_case(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             xml_dir = make_xml_dir(tmp)

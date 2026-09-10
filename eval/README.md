@@ -9,6 +9,8 @@ Historical instructions below may describe earlier experiments. Use these releas
 - Answer release scoring rejects missing answers. Exploratory output records its incomplete set.
 - Invalid citations remain unsupported claims in the denominator. This changes scorer behavior;
   historical scores must not be relabeled as results from this scorer.
+- Release answer scoring requires separate human claim-coverage annotations. Exploratory scoring
+  may omit them and records coverage as not evaluated.
 - `common.run_meta.append_run` copies outputs to unique `eval/artifacts/` folders. Preserve those
   and completed human worksheets. The historical snapshot is `eval/artifacts/legacy-20260909/`.
 - Build caches with `python -m retrieval.build_index --out eval/runs/index-new.pkl`.
@@ -218,10 +220,9 @@ needs a human to locate and confirm by hand (see `corpus_text.py`'s `extract_sec
 ## score.py: the scorer
 
 Grades a *system answer* against `answer_cases.jsonl` per the rubric in `docs/DECISION_LOG.md`
-("Answer-set scoring rubric" and "M1 scorer architecture" entries): four pass/partial/fail
-sub-scores for evidence cases (direction/strength, groundedness, surfaces disagreement,
-says-not-found), two for methods_extraction cases (parameter accuracy, citation). It never talks
-to a live system; it grades a JSONL of already-generated answers against the schema below.
+("Answer-set scoring rubric" and "M1 scorer architecture" entries): direction, strength,
+groundedness, claim coverage, disagreement surfacing and not-found behavior. It never talks to a
+live system; it grades JSONL answers and separate human coverage annotations.
 
 ### The system-answer schema
 
@@ -239,6 +240,34 @@ One JSON object per `case_id`, own file, e.g. `runs/no_retrieval_answers.jsonl`:
  ]}
 ```
 
+### Claim-coverage annotations
+
+Historical and baseline prose can contain facts omitted from the submitted `claims`. Pass a
+separate human annotation file with `--coverage-labels`. One JSONL row covers one answer:
+
+```json
+{"case_id":"example_001","units":[
+  {"text":"ATM c.7570G>C was classified as high risk","covered_by_claim":1,"critical":true},
+  {"text":"The reported odds ratio was 8.5","covered_by_claim":2,"critical":true},
+  {"text":"The cohort was Finnish","covered_by_claim":null,"critical":false}
+]}
+```
+
+`covered_by_claim` is a 1-based index into that answer's submitted claims, or `null` when the
+fact is absent. A unit is one independently verifiable proposition. Preserve material entity,
+variant, condition, direction, magnitude, population, time and uncertainty qualifiers when
+deciding whether a claim covers it. Do not use a model being scored to create these annotations.
+
+Coverage passes at 100%. At least 80% with no uncovered critical unit is diagnostic partial.
+Anything lower, or any uncovered critical unit, fails. This measures whether displayed factual
+prose entered citation checking. Groundedness and answer completeness remain separate properties.
+
+```sh
+python -m eval.score --answers runs/bm25_only_answers.jsonl \
+  --coverage-labels runs/bm25_only_coverage.jsonl --judge groq \
+  --out runs/bm25_only_scores.json
+```
+
 `claims` is what groundedness (property 2) scores: each claim's cited span is pulled from the real
 XML via `corpus_text.load_span_text` and checked against the claim text. A claim whose citation
 doesn't resolve (missing file, offsets out of range) counts as unsupported, not a crash. An answer
@@ -249,18 +278,63 @@ and `gold.expected_pmcids` are what they're checked against.
 
 ### Judges
 
+Generate a fresh development-only human grounding pilot with complete cited spans:
+
+```sh
+python -m eval.make_claim_calibration --answers runs/bm25_only_answers.jsonl \
+  --out claim_grounding_pilot.md --limit 12
+```
+
+The worksheet is blind to judge output. `unclear` is a rubric-pilot label only; resolve it before
+the frozen calibration run.
+
+Grounding requires the cited text span to establish the entire claim and all material qualifiers.
+Silence cannot support a scientific negative such as no association, no effect or no reported
+outcome. Compound claims fail when any component lacks support. Captions can support results they
+state explicitly. A result encoded only in an unavailable figure is unsupported by the text span
+and should be recorded with failure subtype `figure_required`; that verdict identifies an input
+modality gap and does not mean the paper itself lacks evidence. Query relevance and answer
+completeness are evaluated separately.
+
+The final calibration expands the natural stratum with 12 previously user-reviewed retrieval
+questions in `data/grounding-calibration-expansion-v1.jsonl`. Generate current runtime claims from
+their reviewed gold spans, then combine them with the unused BM25 and oracle claims:
+
+```sh
+python -m eval.generate_grounding_expansion \
+  --out eval/artifacts/grounding-calibration-v1/inputs/grounding_expansion_answers.jsonl
+
+python -m eval.make_claim_calibration \
+  --answers eval/runs/bm25_only_answers.jsonl \
+  --answers eval/runs/oracle_spans_answers.jsonl \
+  --answers eval/artifacts/grounding-calibration-v1/inputs/grounding_expansion_answers.jsonl \
+  --cases eval/data/answer_cases.jsonl \
+  --cases eval/data/grounding-calibration-expansion-v1.jsonl \
+  --exclude-worksheet eval/claim_grounding_pilot.md \
+  --exclude-source eval/runs/bm25_only_answers.jsonl \
+  --limit 36 --stress-count 24 --seed 20260910 \
+  --out eval/claim_grounding_calibration.md \
+  --manifest eval/claim_grounding_calibration_manifest.json
+```
+
+The expansion generator requires `GROQ_API_KEY`, validates runtime output and refuses to write an
+artifact unless at least 12 new claims exist. The final worksheet hides case IDs, source runs,
+strata and perturbations. Do not inspect its manifest until human labels are complete.
+
 `--judge fake`: no network, deterministic word-overlap grading. Only for testing the scorer's own
 logic (bucket thresholds, N/A handling), see `eval/test_score.py`. Not a real evaluation.
 
-`--judge groq`: the real judge, Groq's free tier (`llama-3.3-70b-versatile`, matching the model
-already decided in `docs/DECISION_LOG.md`). Needs `GROQ_API_KEY` in the environment (free key at
+`--judge groq`: the real judge, using the current model recorded in `common/llm_client.py`. Needs
+`GROQ_API_KEY` in the environment (free key at
 https://console.groq.com/keys); fails loudly at construction if it's missing rather than silently
 using the fake judge.
 
 ### Usage
 
-```
-python -m eval.score --answers runs/no_retrieval_answers.jsonl --judge groq --out runs/no_retrieval_scores.json
+```sh
+python -m eval.score --answers runs/no_retrieval_answers.jsonl \
+  --coverage-labels runs/no_retrieval_coverage.jsonl \
+  --judge groq --out runs/no_retrieval_scores.json
 ```
 
 Prints each property's `n` / pass / partial / fail / pass_rate, N/A cases excluded from `n` rather

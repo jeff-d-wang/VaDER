@@ -1,0 +1,13 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "prompt_version": "runtime_grounding_calibration_v1",
+  "prompt_sha256": "ce0f49044a9d0baab2bd766f426174ba5c6c776004fb433db844ee82245f11f2",
+  "git_sha": "cc9a698d503133e92a51ea9d18e1840090313fa3",
+  "source_hash": "cfg-16a517d32af4",
+  "input_sha256": "8528ea60d2a81fbb65524120337d1cd7eecd1fa34b8eeb63ecd55848bdee8a13",
+  "config_hash": "cfg-834f284bb2e6",
+  "generated_at_utc": "2026-09-10T20:34:49.412638+00:00",
+  "n_inputs": 12,
+  "n_claims": 16,
+  "output_sha256": "01e84a68e3b0ea8cb2e7edbcd6f376b3e29545b6401edf363092c851b6027107"
+}

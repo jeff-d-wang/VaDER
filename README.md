@@ -42,7 +42,8 @@ Read the plan's experiment rules before running measured comparisons.
 
 To enable synthesis locally, set `VADER_GENERATION_ENABLED=1` and `GROQ_API_KEY` before
 starting the service, then POST the same query JSON to `/answer`. This returns one validated
-JSON response with claims and evidence. It consumes provider quota. See [serving limits and
+JSON response with claims and evidence. Display text is rendered from those claims rather than
+generated independently. It consumes provider quota. See [serving limits and
 error codes](service/README.md#runtime-synthesis). No live synthesis quality has been validated.
 
 ## Layout

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "rubric_version": "text_span_grounding_v1",
+  "rater": "user",
+  "blank_worksheet_sha256": "7009040316ca14b32993f3e2b586aa86d27bc3033adc0cf5d4340d645e17c2df",
+  "pair_manifest_path": "eval/claim_grounding_calibration_manifest.json",
+  "pair_manifest_sha256": "860214b5ffdedb6e8673d777ea066e06c25952f86e4c28ddaa642aac207f12b8",
+  "labeled_worksheet_path": "eval/artifacts/grounding-calibration-v1/human_labels.md",
+  "labeled_worksheet_sha256": "29712db5d114d01dc7e37157b437cf6b2ce138bb6b3779213ac54c1f8182ceb8",
+  "labels_path": "eval/artifacts/grounding-calibration-v1/human_labels.jsonl",
+  "labels_sha256": "24403e436acf69266f266cc7bab717be747eac6cb210daeb48db9ae283953e4f",
+  "counts": {
+    "supported": 32,
+    "unsupported": 28
+  },
+  "counts_by_hidden_stratum": {
+    "natural": {
+      "supported": 31,
+      "unsupported": 5
+    },
+    "stress": {
+      "unsupported": 23,
+      "supported": 1
+    }
+  },
+  "failure_subtypes": {
+    "missing_information": 12,
+    "figure_required": 1,
+    "off_topic": 14,
+    "contradiction": 1
+  },
+  "automated_judge_run": false
+}

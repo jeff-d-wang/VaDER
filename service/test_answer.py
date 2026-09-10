@@ -14,7 +14,6 @@ from service.test_app import _make_client
 
 
 VALID = {"direction": "increased", "strength": "unstated", "not_found": False,
-         "answer_text": "The cohort reports elevated risk [1].",
          "claims": [{"text": "The cohort reports elevated risk.", "excerpt_index": 1}]}
 
 
@@ -33,6 +32,7 @@ class AnswerTests(unittest.TestCase):
         body = response.json()
         evidence = body["evidence"][0]
         claim = body["claims"][0]
+        self.assertEqual(body["answer_text"], "The cohort reports elevated risk [1].")
         self.assertEqual(claim["cited_pmcid"], evidence["pmcid"])
         self.assertEqual(claim["cited_char_end"] - claim["cited_char_start"], len(evidence["text"]))
         log = json.loads(self.log_path.read_text())
@@ -76,7 +76,12 @@ class AnswerTests(unittest.TestCase):
     def test_abstention_replaces_model_prose(self):
         out = dict(VALID, not_found=True, claims=[], direction="none", strength="unstated")
         parsed = validate_runtime_answer(out, [({"pmcid": "PMC1"}, "text")])
-        self.assertNotEqual(parsed["answer_text"], VALID["answer_text"])
+        self.assertIn("do not establish", parsed["answer_text"])
+
+    def test_runtime_rejects_independent_prose(self):
+        out = dict(VALID, answer_text="An unchecked factual statement.")
+        with self.assertRaises(ValueError):
+            validate_runtime_answer(out, [({"pmcid": "PMC1"}, "text")])
 
     def test_concurrent_request_rejected_and_cancelled_slot_released(self):
         client = self.client(generation_concurrency=1)

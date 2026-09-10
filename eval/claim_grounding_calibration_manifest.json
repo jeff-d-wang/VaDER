@@ -1,0 +1,1473 @@
+{
+  "schema_version": 1,
+  "rubric_version": "text_span_grounding_v1",
+  "seed": 20260910,
+  "counts": {
+    "natural": 36,
+    "stress": 24,
+    "total": 60
+  },
+  "inputs": [
+    {
+      "path": "eval/runs/bm25_only_answers.jsonl",
+      "sha256": "c1ee4722a0fcc7637408fa8108c18f140d82cb5ed8963cd95469582636967437"
+    },
+    {
+      "path": "eval/runs/oracle_spans_answers.jsonl",
+      "sha256": "abde5bc13d8a23a9af047ce2918b7baddae04a2377dbd34575f217baaa5a4822"
+    },
+    {
+      "path": "eval/artifacts/grounding-calibration-v1/inputs/grounding_expansion_answers.jsonl",
+      "sha256": "01e84a68e3b0ea8cb2e7edbcd6f376b3e29545b6401edf363092c851b6027107"
+    }
+  ],
+  "exclusion": {
+    "worksheet": "eval/claim_grounding_pilot.md",
+    "worksheet_sha256": "e099a6430e66db2cfc29f726ed40684d6bc385eb01e7179b5f9f9901373d12e1",
+    "source_run": "eval/runs/bm25_only_answers.jsonl"
+  },
+  "worksheet": "eval/claim_grounding_calibration.md",
+  "worksheet_sha256": "7009040316ca14b32993f3e2b586aa86d27bc3033adc0cf5d4340d645e17c2df",
+  "pairs": [
+    {
+      "pair_id": "GCV1-001",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc8904525_abstract_0",
+      "claim_number": 1,
+      "claim_text": "The S4 polygenic risk score is associated with a 1.38\u2011fold increased risk of non\u2011mucinous ovarian cancer per standard deviation in women of European ancestry (OR=1.38, 95%\u202fCI\u202f1.28\u20131.48).",
+      "original_citation": {
+        "pmcid": "PMC8904525",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1820
+      },
+      "displayed_citation": {
+        "pmcid": "PMC8904525",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1820
+      },
+      "displayed_span_sha256": "19d60de6ed866b0962873eebb6ce1e7ccbb520734b80d06d05f27a0f82fac80f",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-002",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca1_c4484plus2t_c_prostate_neg_001",
+      "claim_number": 2,
+      "claim_text": "General BRCA1 mutations are associated with increased prostate cancer risk, but no data for c.4484+2T>C",
+      "original_citation": {
+        "pmcid": "PMC5155186",
+        "section_id": "body",
+        "char_start": 6908,
+        "char_end": 7717
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5155186",
+        "section_id": "body",
+        "char_start": 6908,
+        "char_end": 7717
+      },
+      "displayed_span_sha256": "198362e1235f791a95241b6766ab06dddc640896787a5ddd565c801bf8be18cf",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-003",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "claim_number": 3,
+      "claim_text": "Low levels of retained ATM activity may still allow tumor development later in life (e.g., breast cancer).",
+      "original_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "body",
+        "char_start": 22355,
+        "char_end": 22938
+      },
+      "displayed_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_span_sha256": "fff1d280a477ec5c3a2f640c1d469f4fcf7160cbf4923276c1a2f5d76f8b4f4e",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "bm25_only_answers.jsonl",
+        "case_id": "atm_variants_controversy_disagree_001",
+        "claim_number": 3
+      }
+    },
+    {
+      "pair_id": "GCV1-004",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "Polygenic risk scores stratify ovarian cancer risk in BRCA1 carriers, with higher PRS percentiles showing higher cumulative risk",
+      "original_citation": {
+        "pmcid": "PMC8904525",
+        "section_id": "body",
+        "char_start": 34790,
+        "char_end": 34990
+      },
+      "displayed_citation": {
+        "pmcid": "PMC8904525",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1820
+      },
+      "displayed_span_sha256": "19d60de6ed866b0962873eebb6ce1e7ccbb520734b80d06d05f27a0f82fac80f",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "grounding_expansion_answers.jsonl",
+        "case_id": "calexp_pmc8904525_abstract_0",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-005",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "claim_number": 1,
+      "claim_text": "BRCA1/BRCA2 loss\u2011of\u2011function mutations are linked to increased pancreatic cancer risk",
+      "original_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_span_sha256": "f49247392c55c3b9f3598b191f2c9187ec7f3b5933bd900c336019453ebc5ce9",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-006",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc11894594_abstract_0",
+      "claim_number": 1,
+      "claim_text": "Knockdown of SREBP pathway genes decreases mutant TP53 mRNA and protein levels in hepatocellular carcinoma cells",
+      "original_citation": {
+        "pmcid": "PMC11894594",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1970
+      },
+      "displayed_citation": {
+        "pmcid": "PMC11894594",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1970
+      },
+      "displayed_span_sha256": "89177e939a6dbb972ffe991b817bcb3dffab2fcbd151b3b57db8a7dc55513115",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-007",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc4582980_abstract_0",
+      "claim_number": 1,
+      "claim_text": "The BAP1 F170I mutant preferentially localizes to the cytoplasm rather than the nucleus.",
+      "original_citation": {
+        "pmcid": "PMC4582980",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1714
+      },
+      "displayed_citation": {
+        "pmcid": "PMC4582980",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1714
+      },
+      "displayed_span_sha256": "593416dd58be86017f30099b564e5c71e2d7b5b1537332edbc471fd134fcf99f",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-008",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "BRCA2 mutations confer a higher pancreatic cancer risk than BRCA1 mutations.",
+      "original_citation": {
+        "pmcid": "PMC11694537",
+        "section_id": "body",
+        "char_start": 19579,
+        "char_end": 20043
+      },
+      "displayed_citation": {
+        "pmcid": "PMC11694537",
+        "section_id": "body",
+        "char_start": 19579,
+        "char_end": 20043
+      },
+      "displayed_span_sha256": "62c2d5f9db0b3375d795c6d24ca889636049679b2ece68b2937ca0fd142d783f",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-009",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "Polygenic risk scores stratify ovarian cancer risk in BRCA1 carriers, with higher PRS percentiles showing higher cumulative risk",
+      "original_citation": {
+        "pmcid": "PMC8904525",
+        "section_id": "body",
+        "char_start": 34790,
+        "char_end": 34990
+      },
+      "displayed_citation": {
+        "pmcid": "PMC8904525",
+        "section_id": "body",
+        "char_start": 34790,
+        "char_end": 34990
+      },
+      "displayed_span_sha256": "f4f0a84b094ae4e2bdb01c6a456cd065495cb370cff2e5122ca56fe9325498cf",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-010",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc6606020_abstract_259",
+      "claim_number": 1,
+      "claim_text": "Approximately 7% of pancreatic acinar cell carcinomas have germline BRCA1 or BRCA2 mutations",
+      "original_citation": {
+        "pmcid": "PMC6606020",
+        "section_id": "abstract",
+        "char_start": 259,
+        "char_end": 910
+      },
+      "displayed_citation": {
+        "pmcid": "PMC6606020",
+        "section_id": "abstract",
+        "char_start": 259,
+        "char_end": 910
+      },
+      "displayed_span_sha256": "61358de5f32ce13ba55edaba96398b703ac9a63ed94c5fbcebb42ae9e4b0bf4f",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-011",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "palb2_breast_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "The risk is especially high in women \u226430\u202fyears (OR\u202f10.09)",
+      "original_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_span_sha256": "1e1567a4eca014e7ed803ecc01c0d5f61293d50348b18c905563d9246341b62e",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "brca_prs_ovarian_risk_ord_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-012",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca1_c4484plus2t_c_prostate_neg_001",
+      "claim_number": 2,
+      "claim_text": "General BRCA1 mutations are associated with increased prostate cancer risk, but no data for c.4484+2T>C",
+      "original_citation": {
+        "pmcid": "PMC5155186",
+        "section_id": "body",
+        "char_start": 6908,
+        "char_end": 7717
+      },
+      "displayed_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_span_sha256": "fff1d280a477ec5c3a2f640c1d469f4fcf7160cbf4923276c1a2f5d76f8b4f4e",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "bm25_only_answers.jsonl",
+        "case_id": "atm_variants_controversy_disagree_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-013",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "tp53_chondrosarcoma_survival_ord_001",
+      "claim_number": 1,
+      "claim_text": "TP53 mutations were independent predictors of worse survival in chondrosarcoma",
+      "original_citation": {
+        "pmcid": "PMC13033615",
+        "section_id": "abstract",
+        "char_start": 732,
+        "char_end": 1537
+      },
+      "displayed_citation": {
+        "pmcid": "PMC8847983",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1948
+      },
+      "displayed_span_sha256": "fd224b3d8faf279cd7e6407f0f721e5c6d98551fc3ac29e0b38904edd7298a20",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "grounding_expansion_answers.jsonl",
+        "case_id": "calexp_pmc8847983_abstract_0",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-014",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc5325383_abstract_0",
+      "claim_number": 1,
+      "claim_text": "TOP1 expression is significantly increased in tumors from BRCA1 mutation carriers compared with sporadic (non\u2011hereditary) breast cancers (p\u202f=\u202f0.002; adjusted odds ratio\u202f=\u202f3.75, 95%\u202fCI\u202f1.85\u20117.71).",
+      "original_citation": {
+        "pmcid": "PMC5325383",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1797
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5325383",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1797
+      },
+      "displayed_span_sha256": "ea6dcdada323f811335ea18319694a98246f9e99620ca8036bec676635acd0b0",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-015",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc10192162_body_830",
+      "claim_number": 1,
+      "claim_text": "EGFR mutations are reported in up to 50% of lung adenocarcinoma patients from Peru.",
+      "original_citation": {
+        "pmcid": "PMC10192162",
+        "section_id": "body",
+        "char_start": 830,
+        "char_end": 1859
+      },
+      "displayed_citation": {
+        "pmcid": "PMC10192162",
+        "section_id": "body",
+        "char_start": 830,
+        "char_end": 1859
+      },
+      "displayed_span_sha256": "c8fca79f922e0caddd9bf4a4d2ef05b4d37c6a637c78d5a7fb35ea5ca623e411",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-016",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "claim_number": 1,
+      "claim_text": "BRCA1/BRCA2 loss\u2011of\u2011function mutations are linked to increased pancreatic cancer risk",
+      "original_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_citation": {
+        "pmcid": "PMC6606020",
+        "section_id": "abstract",
+        "char_start": 259,
+        "char_end": 910
+      },
+      "displayed_span_sha256": "61358de5f32ce13ba55edaba96398b703ac9a63ed94c5fbcebb42ae9e4b0bf4f",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "grounding_expansion_answers.jsonl",
+        "case_id": "calexp_pmc6606020_abstract_259",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-017",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 2,
+      "claim_text": "The role of ATM heterozygosity in breast cancer risk is uncertain and evidence is mixed",
+      "original_citation": {
+        "pmcid": "PMC137944",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1098
+      },
+      "displayed_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_span_sha256": "264fb2368f8e1076be38dd6b8d486c0c7497b743d8c7176cd58207a17b165506",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "atm_at_lymphoid_tumor_ord_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-018",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 3,
+      "claim_text": "Per\u2011standard\u2011deviation hazard ratios link PRS to increased ovarian cancer risk in BRCA1/BRCA2 carriers",
+      "original_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "body",
+        "char_start": 9941,
+        "char_end": 10117
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_span_sha256": "f49247392c55c3b9f3598b191f2c9187ec7f3b5933bd900c336019453ebc5ce9",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "brca2_pancreatic_risk_ord_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-019",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc7904762_body_0",
+      "claim_number": 1,
+      "claim_text": "Overexpression of the ABCB1 gene (encoding P\u2011glycoprotein) is associated with chemoresistance in cancer cells.",
+      "original_citation": {
+        "pmcid": "PMC7904762",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 520
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7904762",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 520
+      },
+      "displayed_span_sha256": "71e6d82c738ffeb75c5db914a66950d7deaa03688dc40a5626cfedf41949354e",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-020",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "BRCA2 mutations confer a higher pancreatic cancer risk than BRCA1 mutations.",
+      "original_citation": {
+        "pmcid": "PMC11694537",
+        "section_id": "body",
+        "char_start": 19579,
+        "char_end": 20043
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5155186",
+        "section_id": "body",
+        "char_start": 6908,
+        "char_end": 7717
+      },
+      "displayed_span_sha256": "198362e1235f791a95241b6766ab06dddc640896787a5ddd565c801bf8be18cf",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "bm25_only_answers.jsonl",
+        "case_id": "brca1_c4484plus2t_c_prostate_neg_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-021",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "~4\u20137% of pancreatic cancer patients harbor germline BRCA mutations",
+      "original_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_span_sha256": "f49247392c55c3b9f3598b191f2c9187ec7f3b5933bd900c336019453ebc5ce9",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-022",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_c7570g_c_risk_class_disagree_001",
+      "claim_number": 2,
+      "claim_text": "The variant shows a significant association with breast cancer (OR\u202f=\u202f8.5, 95%\u202fCI\u202f1.04\u201162.46, P\u202f=\u202f.018)",
+      "original_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_span_sha256": "c5b4ce7b19ba39fb61cad7d63757130f028a93fd457c43c91c9cfae25c2207f1",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-023",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "claim_number": 1,
+      "claim_text": "CHEK2 1100delC is associated with worse survival measures beyond 6 years",
+      "original_citation": {
+        "pmcid": "PMC4150261",
+        "section_id": "abstract",
+        "char_start": 1283,
+        "char_end": 1539
+      },
+      "displayed_citation": {
+        "pmcid": "PMC13033615",
+        "section_id": "abstract",
+        "char_start": 732,
+        "char_end": 1537
+      },
+      "displayed_span_sha256": "665fa13dff286f576f7219d2e3c5dd63d36bd323292cdaf3a591b3b202fbb858",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "tp53_chondrosarcoma_survival_ord_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-024",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 2,
+      "claim_text": "The role of ATM heterozygosity in breast cancer risk is uncertain and evidence is mixed",
+      "original_citation": {
+        "pmcid": "PMC137944",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1098
+      },
+      "displayed_citation": {
+        "pmcid": "PMC137944",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1098
+      },
+      "displayed_span_sha256": "97b08027ce5cd405f75286abd05477709b8e5683de3e64511d097acdfd9a9858",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-025",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc3678719_abstract_0",
+      "claim_number": 1,
+      "claim_text": "Functional analyses of EAC-derived mutations in ELMO1 reveal increased cellular invasion.",
+      "original_citation": {
+        "pmcid": "PMC3678719",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 992
+      },
+      "displayed_citation": {
+        "pmcid": "PMC3678719",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 992
+      },
+      "displayed_span_sha256": "9b3033d9766b6fedfef7e8b4f6d3d521f4063ce609bf4e5543bf231bfb00ab97",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-026",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "palb2_breast_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "PALB2 germline mutations markedly increase risk for women \u226430 years old",
+      "original_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 1459,
+        "char_end": 1774
+      },
+      "displayed_citation": {
+        "pmcid": "PMC11694537",
+        "section_id": "body",
+        "char_start": 19579,
+        "char_end": 20043
+      },
+      "displayed_span_sha256": "62c2d5f9db0b3375d795c6d24ca889636049679b2ece68b2937ca0fd142d783f",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "bm25_only_answers.jsonl",
+        "case_id": "brca2_pancreatic_risk_ord_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-027",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "Higher PRS corresponds to higher absolute risk (6% vs 19% by age 80 for BRCA2 carriers across deciles)",
+      "original_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_span_sha256": "1e1567a4eca014e7ed803ecc01c0d5f61293d50348b18c905563d9246341b62e",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-028",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "palb2_breast_risk_ord_001",
+      "claim_number": 1,
+      "claim_text": "PALB2 germline mutations increase breast cancer risk (OR\u202f5.23)",
+      "original_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_span_sha256": "c72ab7e621c1d949ace160831b392f0102a9733624359c03cf5db9df32f49474",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-029",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_c7570g_c_risk_class_disagree_001",
+      "claim_number": 2,
+      "claim_text": "The variant shows a significant association with breast cancer (OR\u202f=\u202f8.5, 95%\u202fCI\u202f1.04\u201162.46, P\u202f=\u202f.018)",
+      "original_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7487731",
+        "section_id": "abstract",
+        "char_start": 546,
+        "char_end": 1161
+      },
+      "displayed_span_sha256": "cf50b05f7fe63a04de286e56dd4e0b24230ceb13513f144a544e9aa577fb9261",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "grounding_expansion_answers.jsonl",
+        "case_id": "calexp_pmc7487731_abstract_546",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-030",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "claim_number": 3,
+      "claim_text": "Low levels of retained ATM activity may still allow tumor development later in life (e.g., breast cancer).",
+      "original_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "body",
+        "char_start": 22355,
+        "char_end": 22938
+      },
+      "displayed_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "body",
+        "char_start": 22355,
+        "char_end": 22938
+      },
+      "displayed_span_sha256": "594d7a21f82f331687e72e180d99900d1acd2b8abec0d6aec9e2a9bc15861427",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-031",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 1,
+      "claim_text": "OC PRS was strongly associated with OC risk for both BRCA1 and BRCA2 carriers",
+      "original_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_span_sha256": "1e1567a4eca014e7ed803ecc01c0d5f61293d50348b18c905563d9246341b62e",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-032",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "palb2_breast_risk_ord_001",
+      "claim_number": 1,
+      "claim_text": "PALB2 germline mutations increase breast cancer risk (OR\u202f5.23)",
+      "original_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7786920",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 351
+      },
+      "displayed_span_sha256": "f609f9783eb7eca312f07033c84a960a58cd92f501ffd7e96b648a44e221c71b",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "atm_variants_controversy_disagree_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-033",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "claim_number": 1,
+      "claim_text": "CHEK2 1100delC is associated with worse survival measures beyond 6 years",
+      "original_citation": {
+        "pmcid": "PMC4150261",
+        "section_id": "abstract",
+        "char_start": 1283,
+        "char_end": 1539
+      },
+      "displayed_citation": {
+        "pmcid": "PMC4150261",
+        "section_id": "abstract",
+        "char_start": 1283,
+        "char_end": 1539
+      },
+      "displayed_span_sha256": "4deee3a1ec96a99664c2fb5570f9d4a52a2a126b6437995fc6beb1467e28f8fc",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-034",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "claim_number": 2,
+      "claim_text": "One study found similar survival outcomes, but meta\u2011analysis indicated worse breast\u2011cancer specific survival",
+      "original_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 23605,
+        "char_end": 24042
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 1459,
+        "char_end": 1774
+      },
+      "displayed_span_sha256": "4260f83d780ff9cd62bd2154437beac338a24fb952e759956de735d95cee9a0f",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "bm25_only_answers.jsonl",
+        "case_id": "palb2_breast_risk_ord_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-035",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "claim_number": 2,
+      "claim_text": "Residual ATM kinase activity provides a protective effect against tumour development",
+      "original_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_span_sha256": "264fb2368f8e1076be38dd6b8d486c0c7497b743d8c7176cd58207a17b165506",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-036",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "claim_number": 1,
+      "claim_text": "Absence of ATM kinase activity is linked to a markedly higher risk of lymphoid tumours in childhood",
+      "original_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_span_sha256": "264fb2368f8e1076be38dd6b8d486c0c7497b743d8c7176cd58207a17b165506",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-037",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 1,
+      "claim_text": "OC PRS was strongly associated with OC risk for both BRCA1 and BRCA2 carriers",
+      "original_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_span_sha256": "c72ab7e621c1d949ace160831b392f0102a9733624359c03cf5db9df32f49474",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "palb2_breast_risk_ord_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-038",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc7487731_abstract_546",
+      "claim_number": 1,
+      "claim_text": "The BRCA2 alteration c.5116_5119delAATA has a founder effect in North Africa.",
+      "original_citation": {
+        "pmcid": "PMC7487731",
+        "section_id": "abstract",
+        "char_start": 546,
+        "char_end": 1161
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7487731",
+        "section_id": "abstract",
+        "char_start": 546,
+        "char_end": 1161
+      },
+      "displayed_span_sha256": "cf50b05f7fe63a04de286e56dd4e0b24230ceb13513f144a544e9aa577fb9261",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-039",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 1,
+      "claim_text": "ATM variants seem to increase breast cancer risk",
+      "original_citation": {
+        "pmcid": "PMC7786920",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 351
+      },
+      "displayed_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_span_sha256": "264fb2368f8e1076be38dd6b8d486c0c7497b743d8c7176cd58207a17b165506",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "atm_at_lymphoid_tumor_ord_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-040",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc8566594_abstract_0",
+      "claim_number": 1,
+      "claim_text": "Mutations in CREBBP or EP300 are associated with increased recurrence after radiation in squamous cell carcinoma cohorts.",
+      "original_citation": {
+        "pmcid": "PMC8566594",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1090
+      },
+      "displayed_citation": {
+        "pmcid": "PMC8566594",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1090
+      },
+      "displayed_span_sha256": "9a4938cbf7df05a9ce3d4806ecba550bc905a0e2e36a30c1b1799d926150c9ee",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-041",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "claim_number": 2,
+      "claim_text": "Residual ATM kinase activity provides a protective effect against tumour development",
+      "original_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 23605,
+        "char_end": 24042
+      },
+      "displayed_span_sha256": "fcf321d91ad60ae1202579c7f31b75dbe6f6a106f5527ffce1f6a338f78bc1dd",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "chek2_1100delc_prognosis_disagree_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-042",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc8847983_abstract_0",
+      "claim_number": 1,
+      "claim_text": "TP53 is altered in 2 of 9 (22%) small cell carcinoma of the uterine cervix",
+      "original_citation": {
+        "pmcid": "PMC8847983",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1948
+      },
+      "displayed_citation": {
+        "pmcid": "PMC8847983",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1948
+      },
+      "displayed_span_sha256": "fd224b3d8faf279cd7e6407f0f721e5c6d98551fc3ac29e0b38904edd7298a20",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-043",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "claim_number": 2,
+      "claim_text": "Recent meta\u2011analysis found no worse outcome for CHEK2 c.1100delC carriers",
+      "original_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 28810,
+        "char_end": 29984
+      },
+      "displayed_citation": {
+        "pmcid": "PMC4582980",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1714
+      },
+      "displayed_span_sha256": "593416dd58be86017f30099b564e5c71e2d7b5b1537332edbc471fd134fcf99f",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "grounding_expansion_answers.jsonl",
+        "case_id": "calexp_pmc4582980_abstract_0",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-044",
+      "stratum": "natural",
+      "source_run": "grounding_expansion_answers.jsonl",
+      "case_id": "calexp_pmc11884457_body_0",
+      "claim_number": 1,
+      "claim_text": "Breast cancer is a commonly observed tumor in individuals with Cowden syndrome or PTEN hamartoma tumor syndrome.",
+      "original_citation": {
+        "pmcid": "PMC11884457",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 878
+      },
+      "displayed_citation": {
+        "pmcid": "PMC11884457",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 878
+      },
+      "displayed_span_sha256": "f2dda6589a4668c0203ff7d58912e25d51f923bdc2dc34bd86a3db88e65b61ca",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-045",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 3,
+      "claim_text": "Per\u2011standard\u2011deviation hazard ratios link PRS to increased ovarian cancer risk in BRCA1/BRCA2 carriers",
+      "original_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "body",
+        "char_start": 9941,
+        "char_end": 10117
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "body",
+        "char_start": 9941,
+        "char_end": 10117
+      },
+      "displayed_span_sha256": "61db7fb0f57ab3ea835527bd772a4ebcc85c405c6994df218b3b4e1a05d7409b",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-046",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_c7570g_c_risk_class_disagree_001",
+      "claim_number": 1,
+      "claim_text": "ATM c.7570G>C is classified as a high\u2011risk allele for breast cancer",
+      "original_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_span_sha256": "c72ab7e621c1d949ace160831b392f0102a9733624359c03cf5db9df32f49474",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "palb2_breast_risk_ord_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-047",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 1,
+      "claim_text": "ATM variants seem to increase breast cancer risk",
+      "original_citation": {
+        "pmcid": "PMC7786920",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 351
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7786920",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 351
+      },
+      "displayed_span_sha256": "f609f9783eb7eca312f07033c84a960a58cd92f501ffd7e96b648a44e221c71b",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-048",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "palb2_breast_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "PALB2 germline mutations markedly increase risk for women \u226430 years old",
+      "original_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 1459,
+        "char_end": 1774
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 1459,
+        "char_end": 1774
+      },
+      "displayed_span_sha256": "4260f83d780ff9cd62bd2154437beac338a24fb952e759956de735d95cee9a0f",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-049",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 2,
+      "claim_text": "Recent large epidemiological and molecular studies provide conclusive evidence that ATM mutations causing ataxia\u2011telangiectasia are breast cancer susceptibility alleles",
+      "original_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_span_sha256": "fff1d280a477ec5c3a2f640c1d469f4fcf7160cbf4923276c1a2f5d76f8b4f4e",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-050",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca_prs_ovarian_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "Higher PRS corresponds to higher absolute risk (6% vs 19% by age 80 for BRCA2 carriers across deciles)",
+      "original_citation": {
+        "pmcid": "PMC5408990",
+        "section_id": "abstract",
+        "char_start": 1057,
+        "char_end": 1762
+      },
+      "displayed_citation": {
+        "pmcid": "PMC137944",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1098
+      },
+      "displayed_span_sha256": "97b08027ce5cd405f75286abd05477709b8e5683de3e64511d097acdfd9a9858",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "atm_variants_controversy_disagree_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-051",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 2,
+      "claim_text": "Recent large epidemiological and molecular studies provide conclusive evidence that ATM mutations causing ataxia\u2011telangiectasia are breast cancer susceptibility alleles",
+      "original_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_span_sha256": "c5b4ce7b19ba39fb61cad7d63757130f028a93fd457c43c91c9cfae25c2207f1",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "atm_c7570g_c_risk_class_disagree_001",
+        "claim_number": 1
+      }
+    },
+    {
+      "pair_id": "GCV1-052",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "claim_number": 2,
+      "claim_text": "One study found similar survival outcomes, but meta\u2011analysis indicated worse breast\u2011cancer specific survival",
+      "original_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 23605,
+        "char_end": 24042
+      },
+      "displayed_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 23605,
+        "char_end": 24042
+      },
+      "displayed_span_sha256": "fcf321d91ad60ae1202579c7f31b75dbe6f6a106f5527ffce1f6a338f78bc1dd",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-053",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_at_lymphoid_tumor_ord_001",
+      "claim_number": 1,
+      "claim_text": "Absence of ATM kinase activity is linked to a markedly higher risk of lymphoid tumours in childhood",
+      "original_citation": {
+        "pmcid": "PMC3170966",
+        "section_id": "abstract",
+        "char_start": 617,
+        "char_end": 1157
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_span_sha256": "f49247392c55c3b9f3598b191f2c9187ec7f3b5933bd900c336019453ebc5ce9",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "brca2_pancreatic_risk_ord_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-054",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "palb2_breast_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "The risk is especially high in women \u226430\u202fyears (OR\u202f10.09)",
+      "original_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_citation": {
+        "pmcid": "PMC7384117",
+        "section_id": "abstract",
+        "char_start": 600,
+        "char_end": 1458
+      },
+      "displayed_span_sha256": "c72ab7e621c1d949ace160831b392f0102a9733624359c03cf5db9df32f49474",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-055",
+      "stratum": "stress",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 3,
+      "claim_text": "No evidence that other classes of ATM variants confer breast cancer risk",
+      "original_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_span_sha256": "c5b4ce7b19ba39fb61cad7d63757130f028a93fd457c43c91c9cfae25c2207f1",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "oracle_spans_answers.jsonl",
+        "case_id": "atm_c7570g_c_risk_class_disagree_001",
+        "claim_number": 2
+      }
+    },
+    {
+      "pair_id": "GCV1-056",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "atm_c7570g_c_risk_class_disagree_001",
+      "claim_number": 1,
+      "claim_text": "ATM c.7570G>C is classified as a high\u2011risk allele for breast cancer",
+      "original_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_citation": {
+        "pmcid": "PMC10092731",
+        "section_id": "abstract",
+        "char_start": 1,
+        "char_end": 1307
+      },
+      "displayed_span_sha256": "c5b4ce7b19ba39fb61cad7d63757130f028a93fd457c43c91c9cfae25c2207f1",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-057",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "chek2_1100delc_prognosis_disagree_001",
+      "claim_number": 2,
+      "claim_text": "Recent meta\u2011analysis found no worse outcome for CHEK2 c.1100delC carriers",
+      "original_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 28810,
+        "char_end": 29984
+      },
+      "displayed_citation": {
+        "pmcid": "PMC12702395",
+        "section_id": "body",
+        "char_start": 28810,
+        "char_end": 29984
+      },
+      "displayed_span_sha256": "ffcdc2dd8fb51d5232f4bcb6fb97a653e72f7b950dfdcf1e81a4cbd9fcba11d8",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-058",
+      "stratum": "natural",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "tp53_chondrosarcoma_survival_ord_001",
+      "claim_number": 1,
+      "claim_text": "TP53 mutations were independent predictors of worse survival in chondrosarcoma",
+      "original_citation": {
+        "pmcid": "PMC13033615",
+        "section_id": "abstract",
+        "char_start": 732,
+        "char_end": 1537
+      },
+      "displayed_citation": {
+        "pmcid": "PMC13033615",
+        "section_id": "abstract",
+        "char_start": 732,
+        "char_end": 1537
+      },
+      "displayed_span_sha256": "665fa13dff286f576f7219d2e3c5dd63d36bd323292cdaf3a591b3b202fbb858",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-059",
+      "stratum": "natural",
+      "source_run": "bm25_only_answers.jsonl",
+      "case_id": "atm_variants_controversy_disagree_001",
+      "claim_number": 3,
+      "claim_text": "No evidence that other classes of ATM variants confer breast cancer risk",
+      "original_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_citation": {
+        "pmcid": "PMC2386480",
+        "section_id": "body",
+        "char_start": 0,
+        "char_end": 2149
+      },
+      "displayed_span_sha256": "fff1d280a477ec5c3a2f640c1d469f4fcf7160cbf4923276c1a2f5d76f8b4f4e",
+      "perturbation": "none"
+    },
+    {
+      "pair_id": "GCV1-060",
+      "stratum": "stress",
+      "source_run": "oracle_spans_answers.jsonl",
+      "case_id": "brca2_pancreatic_risk_ord_001",
+      "claim_number": 2,
+      "claim_text": "~4\u20137% of pancreatic cancer patients harbor germline BRCA mutations",
+      "original_citation": {
+        "pmcid": "PMC7788890",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 632
+      },
+      "displayed_citation": {
+        "pmcid": "PMC5325383",
+        "section_id": "abstract",
+        "char_start": 0,
+        "char_end": 1797
+      },
+      "displayed_span_sha256": "ea6dcdada323f811335ea18319694a98246f9e99620ca8036bec676635acd0b0",
+      "perturbation": "citation_swap",
+      "donor": {
+        "source_run": "grounding_expansion_answers.jsonl",
+        "case_id": "calexp_pmc5325383_abstract_0",
+        "claim_number": 1
+      }
+    }
+  ]
+}

@@ -109,6 +109,11 @@ response after validation, with `answer_text`, typed association labels, `claims
 `evidence`, `outcome` and `trace_id`. It does not stream tokens. The existing load-test CLI targets
 `/query` and does not measure generation performance.
 
+Structured claims are the authoritative answer. The model does not supply independent display
+prose. The service renders `answer_text` from validated atomic claims and their evidence numbers.
+This makes every displayed factual statement eligible for grounding checks. Fixed abstention text
+is application status, not a literature claim.
+
 Serving defaults: two simultaneous answer requests per process, five retrieved chunks, 12,000
 source-text characters, 1,024 completion tokens and a 30-second total provider timeout. The
 character budget is not a token estimate. Oversized chunks are skipped intact; `no_context`

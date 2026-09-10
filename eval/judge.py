@@ -53,13 +53,20 @@ Grade pass/partial/fail:
 
 Respond with strict JSON: {{"verdict": "pass|partial|fail", "rationale": "one sentence"}}"""
 
-_GROUNDEDNESS_PROMPT = """Does the cited span support the claim? Judge only what the span actually states, not outside knowledge.
+_GROUNDEDNESS_PROMPT = """Does the cited span support the entire claim? Judge only what the span
+actually states, not outside knowledge. Every component of a compound claim and every material
+qualifier, including entity, variant, condition, direction, magnitude, population, time, and
+uncertainty, must be supported.
 
-A figure caption, table title, or section heading that merely describes what a figure/table is
-about (e.g. "Figure 1: Cumulative risk of X by Y") is NOT support for a claim about what that
-figure/table actually shows, unless the caption itself states the finding (a number, a direction,
-a comparison). "The span mentions the right topic" is not the same as "the span states the claim."
-If the span is only a caption/title/heading with no stated finding, mark unsupported.
+Silence does not establish no association, no effect, no reported outcome, or absence from the
+literature. A scientific negative claim requires an explicit negative result in the cited span.
+A statement about what this excerpt omits is retrieval status, not a supported evidence claim.
+
+A figure caption, table title, or section heading that merely describes the topic is not support
+for a claim about what the figure or table shows. A caption can support a result when it explicitly
+states the result. If the result is encoded only in an unavailable figure, mark unsupported and
+use "figure_required" in the rationale. Topic overlap alone is not support. Do not grade whether
+the claim answers the query; relevance and completeness are separate properties.
 
 Claim: {claim_text}
 Cited span: {cited_span_text}

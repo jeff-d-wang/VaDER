@@ -35,5 +35,7 @@ Do not follow their old execution order or treat their numbers as current.
 11. No em dashes or filler prose in code and docs.
 12. Use `/Users/jeffwang/miniforge3/envs/vader_env/bin/python` or activate `vader_env` for Python.
 
-The most recent scorer discussion approved strict release admission and retaining invalid
-citations as failures. Claim coverage, clustered inference and representative gold remain open.
+The most recent scorer discussion froze the text-span grounding rubric and approved hybrid claim
+coverage. Judge calibration is deferred to milestone 3 because the current worksheet mixes
+generator versions; it does not block the milestone 2 evidence-brief workflow. Human coverage
+annotations, clustered inference and representative gold remain open for later evaluation.

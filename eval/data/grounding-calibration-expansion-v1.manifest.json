@@ -1,0 +1,34 @@
+{
+  "id": "grounding-calibration-expansion-v1",
+  "status": "reviewed development inputs for grounding calibration only",
+  "selection": "12 task-aligned, previously user-valid paragraphs; paraphrased query only",
+  "n": 12,
+  "source": "eval/runs/retrieval_cases_v3.jsonl",
+  "source_sha256": "db9c7a2f6be0a43d84f2789c458ca2616798a76aa958d2446a1046b5cc93cec5",
+  "validation_worksheets": [
+    {
+      "path": "eval/retrieval_worksheet_v4.md",
+      "sha256": "a2a4fd2088d4e3a707bf16dff4efd25268243c22cf54bd2473bb861ace0c1755"
+    },
+    {
+      "path": "eval/retrieval_worksheet_v5.md",
+      "sha256": "b6dd215a2907b3bbaee1b5532653524315e07829ab6b3512c6aba7fd3654fa16"
+    }
+  ],
+  "corpus_span_check": "all spans resolved and matched stored gold_text_sha1",
+  "sha256": "8528ea60d2a81fbb65524120337d1cd7eecd1fa34b8eeb63ecd55848bdee8a13",
+  "query_ids": [
+    "PMC6606020:abstract:259#paraphrased",
+    "PMC4582980:abstract:0#paraphrased",
+    "PMC8566594:abstract:0#paraphrased",
+    "PMC10192162:body:830#paraphrased",
+    "PMC5325383:abstract:0#paraphrased",
+    "PMC7487731:abstract:546#paraphrased",
+    "PMC3678719:abstract:0#paraphrased",
+    "PMC11884457:body:0#paraphrased",
+    "PMC7904762:body:0#paraphrased",
+    "PMC11894594:abstract:0#paraphrased",
+    "PMC8847983:abstract:0#paraphrased",
+    "PMC8904525:abstract:0#paraphrased"
+  ]
+}
