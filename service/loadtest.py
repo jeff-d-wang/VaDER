@@ -45,6 +45,7 @@ async def one_request(client: httpx.AsyncClient, base_url: str, query: str) -> d
     t0 = time.monotonic()
     ttft_s = None
     n_lines = 0
+    summary = None
     ok, err = True, None
     try:
         async with client.stream("POST", f"{base_url}/query", json={"query": query}, timeout=30) as resp:
@@ -55,6 +56,17 @@ async def one_request(client: httpx.AsyncClient, base_url: str, query: str) -> d
                 if ttft_s is None:
                     ttft_s = time.monotonic() - t0
                 n_lines += 1
+                event = json.loads(line)
+                if summary is not None:
+                    raise ValueError("received data after terminal summary")
+                if event.get("type") == "error":
+                    raise ValueError(f"service error: {event.get('code', 'unknown')}")
+                if event.get("type") == "summary":
+                    summary = event
+                    if event.get("stopped_reason") == "deadline":
+                        raise ValueError("retrieval exceeded its deadline")
+            if summary is None:
+                raise ValueError("stream ended without a summary")
     except Exception as exc:  # noqa: BLE001
         ok, err = False, f"{type(exc).__name__}: {exc}"
     total_s = time.monotonic() - t0

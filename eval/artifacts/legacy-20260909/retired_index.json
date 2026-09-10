@@ -1,0 +1,6 @@
+{
+  "source": "eval/runs/bm25_index.PRE_UNIFICATION.pkl",
+  "bytes": 585073954,
+  "sha256": "dee29150f15523a5cbadbf4eb6d14df657ca4b67cda4e27993aa7a14aebf83d5",
+  "reason": "Obsolete pre-unification paragraph extraction cache. Current source-span coverage regression tests retain the failure case. Historical binary replay is intentionally retired."
+}

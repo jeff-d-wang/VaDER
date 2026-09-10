@@ -1,0 +1,9 @@
+{
+  "id": "retrieval-reviewed-20260909",
+  "status": "reviewed diagnostic subset, not representative product evaluation",
+  "source": "eval/data/retrieval_cases.jsonl",
+  "source_sha256": "5a0fe260fec85962e6389ad5d5cce491e2dc8c542f356a4816f575d7595ef0ce",
+  "sha256": "0dd28d214a15b52061988289e1474632fb0bd47377b908acb43a9eece9e4e291",
+  "n_queries": 18,
+  "selection": "existing validation_verdict=valid and validated_by present; no new labels"
+}

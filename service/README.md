@@ -1,19 +1,15 @@
-# Service: the retrieval measurement surface
+# Service: retrieval and bounded synthesis
 
 A FastAPI app that answers a query by streaming supporting spans found by BM25 over the phase D
 structure-aware chunk index. See the module docstrings in `app.py` and `search.py` for the
 mechanics.
 
-## Phase E, retrieval-only so far
+## Retrieval measurement surface
 
 `search.py` builds a real `retrieval/bm25.py` index over the corpus at startup (the same
 structure-aware chunking, `retrieval/chunker.py`, phase D measured) and searches it per request.
-**No LLM yet.** Generation is Phase E's next piece, kept separate on purpose: a load test against
-retrieval alone gives an attributable number for that stage before the two are bundled, per
-`docs/DECISION_LOG.md`'s v1 definition (each measured upgrade lands alone with its own paired
-test, not bundled). Full rationale for how this replaced the Step 0c stub keyword matcher is in
-`docs/DECISION_LOG.md`, "Step 0c built as a stub handler, v1 formally dropped" (history) and the
-phase E service rewrite entry (current).
+`/query` remains retrieval-only for stage-specific load tests. `/answer` adds opt-in synthesis
+using shared runtime helpers in `common`, without importing the judge or evaluation datasets.
 
 What it's for regardless: **p95, TTFT, and concurrency are properties of a server, not a notebook
 loop.** This app is the real HTTP path every latency number in this project gets measured against,
@@ -49,6 +45,12 @@ index lookup rather than the old stub's incremental per-candidate file scan, so 
 known before the first line is sent; TTFT still measures real work; it now measures the full
 retrieval call rather than time-to-first-XML-open. See `search.py`'s module docstring for what
 changed under `SearchStats`' field names, which stayed the same on the wire.
+
+Matches contain the complete chunk text, with corresponding source offsets. A retrieval that
+exceeds its deadline emits `{"type":"error","code":"deadline"}` with an explanatory note,
+then the summary, instead of `not_found`. Clients must inspect these events even on HTTP 200.
+The load tester rejects error streams and streams missing a terminal summary. The deadline is checked cooperatively during the postings scan and after retrieval. It does
+not include threadpool queue time or preempt ranking at an exact wall-clock boundary.
 
 Every request is traced (`common/trace.py`): a `query` trace with a `retrieve` span
 (`retriever=bm25`, `retrieval.hit_count`), written as JSONL to `VADER_TRACE_FILE` (default
@@ -94,3 +96,34 @@ service/
   logs/               git-ignored: requests.jsonl, one line per request served
   requirements.txt
 ```
+
+`VADER_EXCLUSIONS` selects a CSV of PMCIDs omitted from the served evaluation corpus view.
+It defaults to the committed held-out registry. Supply an empty CSV with a `pmcid` header for
+a full product corpus view. A missing explicitly selected exclusions file fails startup.
+
+## Runtime synthesis
+
+Start with `VADER_GENERATION_ENABLED=1` and `GROQ_API_KEY` in the environment. POST JSON
+`{"query":"BRCA1 variant breast cancer"}` to `/answer`. This endpoint returns a single JSON
+response after validation, with `answer_text`, typed association labels, `claims`, full source
+`evidence`, `outcome` and `trace_id`. It does not stream tokens. The existing load-test CLI targets
+`/query` and does not measure generation performance.
+
+Serving defaults: two simultaneous answer requests per process, five retrieved chunks, 12,000
+source-text characters, 1,024 completion tokens and a 30-second total provider timeout. The
+character budget is not a token estimate. Oversized chunks are skipped intact; `no_context`
+means retrieved chunks did not fit. No retry waits occur on the serving path. The retrieval
+stage retains its separate five-second cooperative deadline. Context/query data is sent to Groq
+when synthesis is enabled. The token limit follows the [Groq API reference](https://console.groq.com/docs/api-reference).
+
+Errors are HTTP 503 for disabled generation, missing credentials or missing corpus; 429 for
+local capacity; 504 for timeouts; 502 for provider or response-validation failures. Failures never
+become successful abstentions. Not-found and model-abstained results explicitly mean lack of
+retrieved support, not evidence of no association. Citation indices resolve only to supplied
+source spans. This does not establish semantic grounding or complete coverage of answer prose.
+
+`/answer` logs outcome, duration and trace ID without query text. Application task cancellation
+releases its slot and cancels the async provider operation. Immediate detection of browser
+disconnects is not implemented; the provider deadline bounds those calls. Admission is per
+process, with no user authentication or global spending quota. Retrieval logs still retain query
+text and retrieval admission is unchanged. Keep serving local until those pilot controls exist.

@@ -14,10 +14,13 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from service.app import create_app
+from common.corpus_text import Chunk
+from retrieval.bm25 import index_from_chunks
 
 ARTICLES = {
     "PMC1000001": {
@@ -129,7 +132,30 @@ class TestService(unittest.TestCase):
         m = matches[0]
         self.assertEqual(m["pmcid"], "PMC1000001", m)
         self.assertTrue(m["char_end"] > m["char_start"] >= 0, m)
-        self.assertLessEqual(len(m["text"]), 500, "match text is truncated to <=500")
+        self.assertEqual(len(m["text"]), m["char_end"] - m["char_start"])
+
+    def test_long_evidence_is_returned_with_matching_offsets(self):
+        client = self.client()
+        text = "Background information. " * 30 + "BRCA1 carriers showed elevated risk."
+        client.app.state.index = index_from_chunks([Chunk(
+            "long", "PMC1000001", text,
+            [{"section": "body", "char_start": 10, "char_end": 10 + len(text)}])])
+        _, lines = self.query(client, "BRCA1")
+        match = lines[0]
+        self.assertEqual(match["text"], text)
+        self.assertEqual(match["char_end"] - match["char_start"], len(text))
+
+    def test_deadline_is_an_error_not_evidence_of_absence(self):
+        client = self.client()
+        def timed_out(query, articles, stats, **kwargs):
+            stats.stopped_reason = "deadline"
+            return iter(())
+        with patch("service.search.search", side_effect=timed_out):
+            _, lines = self.query(client, "BRCA1")
+        self.assertEqual(lines[0]["type"], "error")
+        self.assertEqual(lines[0]["code"], "deadline")
+        self.assertEqual(lines[-1]["type"], "summary")
+        self.assertFalse(any(line["type"] == "not_found" for line in lines))
 
     def test_unrelated_query_reports_not_found(self):
         client = self.client(max_scan=7, max_matches=3)

@@ -17,13 +17,15 @@ chunk whose source spans overlap the gold span), reused directly.
 """
 from __future__ import annotations
 
+from eval.datasets import validate_cases
+
 import argparse
 import json
 import sys
 import time
 from pathlib import Path
 
-from common.run_meta import append_run, config_hash, git_sha
+from common.run_meta import file_hash, source_hash, append_run, config_hash, git_sha
 from common.stats import wilson_ci
 from eval.compare_runs import mcnemar_exact_p
 from eval.score_retrieval import check_index_covers_gold, hit_at, rank_of_gold, to_query_result
@@ -69,14 +71,20 @@ def by_axis(cases: list[dict], hits: dict[str, bool]) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
+    parser.add_argument("--cases", type=Path, required=True)
     parser.add_argument("--index", type=Path, default=EVAL_DIR / "runs" / "bm25_index.pkl")
     parser.add_argument("--top-k", type=int, default=100)
     parser.add_argument("--report-k", type=int, default=10)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--exploratory", action="store_true")
     args = parser.parse_args(argv)
 
     cases = load_cases(args.cases)
+    try:
+        validate_cases(cases, exploratory=args.exploratory)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     print(f"{args.cases.name}: {len(cases)} queries over "
           f"{len({c['case_id'] for c in cases})} cases")
     index = BM25Index.load(args.index)
@@ -117,7 +125,9 @@ def main(argv: list[str] | None = None) -> int:
 
     config = {"retriever": "bm25", "k1": bm25.K1, "b": bm25.B, "top_k": args.top_k,
               "index": str(args.index), "n_indexed": index.n_docs,
-              "cases": str(args.cases), "n_queries": len(cases), "git_sha": git_sha()}
+              "cases": str(args.cases), "n_queries": len(cases), "git_sha": git_sha(),
+              "cases_sha256": file_hash(args.cases), "index_sha256": file_hash(args.index),
+              "source_hash": source_hash(), "report_k": args.report_k, "exploratory": args.exploratory}
     payload = {"config": config, "config_hash": config_hash(config),
                "overall": overall, "paired": pair, "by_axis": axis,
                "per_query": [{"query_id": c["query_id"], "case_id": c["case_id"],
@@ -132,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out.write_text(json.dumps(payload, indent=2))
         print(f"Wrote {args.out}")
         run_id = append_run(eval_set="identifier", run_config=config, results_path=str(args.out),
+                            input_paths={"cases": args.cases, "index": args.index},
                             metrics={f"matched_recall@{k}": overall["matched"]["value"],
                                      f"mismatched_recall@{k}": overall["mismatched"]["value"],
                                      "n_pairs": pair["n_pairs"]})

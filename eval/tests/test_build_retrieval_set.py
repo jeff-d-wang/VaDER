@@ -13,9 +13,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from eval.build_retrieval_set import (MAX_RAREST_TERM_DF, answer_share_in_query, build,
-                                      classify_section, lexical_overlap, rarest_term_df,
-                                      rows_for, validate)
+from common.corpus_text import Chunk
+from eval.build_retrieval_set import (MAX_GENERIC_RANK, MAX_RAREST_TERM_DF, MIN_SPECIFICITY_MARGIN,
+                                      answer_share_in_query, build, classify_section,
+                                      lexical_overlap, rarest_term_df, rows_for,
+                                      specificity_margin, validate)
+from retrieval.bm25 import index_from_chunks
 
 PARAGRAPH = ("Among 1,432 carriers of the CHEK2 c.1100delC variant, the hazard ratio for "
              "contralateral breast cancer was 2.7 compared with non-carriers in the Dutch cohort.")
@@ -209,6 +212,92 @@ class TestSpecificity(unittest.TestCase):
         """One distinctive handle is enough; the common words around it do
         not dilute it."""
         self.assertEqual(rarest_term_df("the risk of c.1100delc", self.RARE), 3)
+
+
+class TestSpecificityMargin(unittest.TestCase):
+    """rarest_term_df catches a query with no uncommon word at all. It cannot
+    catch a term that is a rare STRING but names a recurring CATEGORY many
+    similarly-shaped paragraphs share ("NOS score" is uncommon vocabulary and
+    still boilerplate across meta-analyses). This is the check that can,
+    because it asks the retriever itself rather than a token-frequency table.
+
+    Ten near-duplicate siblings, not one, because a single sibling still lets
+    the gold paragraph's extra content win on length normalization alone (an
+    earlier version of this fixture with one sibling passed both queries and
+    proved nothing); a real generic paragraph in this project's corpus has
+    hundreds of siblings, not one."""
+
+    GOLD_SPAN = {"pmcid": "PMC1", "section": "body", "char_start": 0, "char_end": 50}
+
+    def _index(self):
+        chunks = [Chunk(chunk_id="c1", pmcid="PMC1",
+                        text="The XKQ7 protein level was measured at 4.2 ng/mL in the cohort.",
+                        source_spans=[{"section": "body", "char_start": 0, "char_end": 50}])]
+        chunks += [Chunk(chunk_id=f"c{i}", pmcid=f"PMC{i}",
+                         text="Protein level was measured in the cohort as part of standard "
+                              "analysis.",
+                         source_spans=[{"section": "body", "char_start": 0, "char_end": 60}])
+                  for i in range(2, 12)]
+        return index_from_chunks(chunks)
+
+    def test_a_query_naming_a_rare_term_wins_decisively(self):
+        rank, margin = specificity_margin(
+            "What was the XKQ7 protein level in the cohort?", self.GOLD_SPAN, self._index())
+        self.assertEqual(rank, 1)
+        self.assertGreater(margin, MIN_SPECIFICITY_MARGIN)
+
+    def test_a_query_ten_siblings_share_loses_to_them(self):
+        """No unique term: the query matches all ten identical siblings as
+        well as the gold paragraph, which is slightly longer and so loses on
+        BM25's length normalization -- the real mechanism a generic query in
+        the corpus fails by, not a contrived one."""
+        rank, margin = specificity_margin(
+            "What protein level was measured in the cohort?", self.GOLD_SPAN, self._index())
+        self.assertGreater(rank, MAX_GENERIC_RANK)
+        self.assertLess(margin, MIN_SPECIFICITY_MARGIN)
+
+    def test_gold_paragraph_absent_from_the_results_is_the_worst_case(self):
+        """A query so far off it does not even retrieve its own source
+        paragraph is a stronger generic-query signal than any margin on a
+        paragraph that did surface, so this must sort at least as bad as the
+        sibling case above, not as a neutral or missing value."""
+        index = self._index()
+        rank, margin = specificity_margin("completely unrelated words entirely", self.GOLD_SPAN,
+                                          index, top_k=3)
+        self.assertIsNone(rank)
+        self.assertEqual(margin, float("-inf"))
+
+    def test_validate_rejects_a_generic_lexical_query(self):
+        item = with_(lexical_query="What protein level was measured in the cohort?",
+                    answer_quote="4.2 ng/mL")
+        reason = validate(item, "The XKQ7 protein level was measured at 4.2 ng/mL in the cohort.",
+                          gold_span=self.GOLD_SPAN, para_index=self._index())
+        self.assertIn("generic", reason)
+
+    def test_validate_passes_a_specific_lexical_query(self):
+        item = with_(lexical_query="What was the XKQ7 protein level in the cohort?",
+                    answer_quote="4.2 ng/mL")
+        self.assertIsNone(validate(item, "The XKQ7 protein level was measured at 4.2 ng/mL in the cohort.",
+                                   gold_span=self.GOLD_SPAN, para_index=self._index()))
+
+    def test_off_when_no_para_index_is_supplied(self):
+        item = with_(lexical_query="What protein level was measured in the cohort?",
+                    answer_quote="4.2 ng/mL")
+        self.assertIsNone(validate(item, "The XKQ7 protein level was measured at 4.2 ng/mL in the cohort.",
+                                   gold_span=self.GOLD_SPAN))
+
+    def test_only_the_lexical_query_is_checked(self):
+        """Calibrated 2026-09-08: checking both styles rejected 50% of
+        known-VALID query-rows, because the paraphrased style is deliberately
+        de-lexicalized and so scores lower against its own gold paragraph by
+        construction, regardless of specificity. A generic PARAPHRASED query
+        must not be rejected on that basis alone; only the lexical query
+        gates this check."""
+        item = with_(lexical_query="What was the XKQ7 protein level in the cohort?",
+                    paraphrased_query="What common biomarker level was recorded across the group?",
+                    answer_quote="4.2 ng/mL")
+        self.assertIsNone(validate(item, "The XKQ7 protein level was measured at 4.2 ng/mL in the cohort.",
+                                   gold_span=self.GOLD_SPAN, para_index=self._index()))
 
 
 class TestClassifySection(unittest.TestCase):

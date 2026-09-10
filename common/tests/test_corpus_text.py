@@ -15,8 +15,8 @@ import unittest
 from xml.etree import ElementTree as ET
 from pathlib import Path
 
-from common.corpus_text import (Chunk, chunk_hits_span, extract_section_text,
-                                iter_paragraphs, iter_paragraphs_from_root,
+from common.corpus_text import (Chunk, chunk_hits_span, clean_paragraph_texts,
+                                extract_section_text, iter_paragraphs, iter_paragraphs_from_root,
                                 parse_root, section_titles_from_root, spans_overlap)
 
 WITH_PARAGRAPHS = """<article>
@@ -103,6 +103,144 @@ class TestConsumersAgree(unittest.TestCase):
             for section, text, start, end in paras:
                 self.assertEqual(extract_section_text(path, section)[start:end], text)
 
+
+
+class TestCleanParagraphTexts(unittest.TestCase):
+    """Real shapes, pulled from PMC9218467 while diagnosing this: a single
+    citation ("<sup>\\n<xref ref-type=\"bibr\">1</xref>\\n</sup>", the newline
+    is real pretty-print whitespace already in the XML) and a range
+    ("2–4", where the middle xref is empty and the dash is a bare text
+    node between two xrefs)."""
+
+    XML = """<article>
+  <abstract><p>Rare cancers.<sup>
+<xref ref-type="bibr" rid="b1">1</xref>
+</sup> They occur late.<sup><xref ref-type="bibr" rid="b2">2</xref><xref ref-type="bibr" rid="b3" />–<xref ref-type="bibr" rid="b4">4</xref></sup> Stage 4 disease is common.<sup>2</sup></p></abstract>
+  <body><p>Second para, no citations.</p></body>
+</article>"""
+
+    def test_citation_superscripts_are_stripped_and_whitespace_collapsed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, self.XML)
+            root = parse_root(path)
+            cleaned = clean_paragraph_texts(root, "abstract")
+            self.assertEqual(
+                cleaned[0],
+                "Rare cancers. They occur late. Stage 4 disease is common.2")
+
+    def test_offsets_and_raw_text_are_unaffected(self):
+        """The whole point: this is presentation-only. iter_paragraphs_from_root
+        and extract_section_text must still see the raw text, citation markers
+        and pretty-print whitespace included, so no stored offset moves."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, self.XML)
+            root = parse_root(path)
+            raw = list(iter_paragraphs_from_root(root, "abstract"))[0][0]
+            self.assertIn("1", raw)
+            self.assertIn("\n", raw)
+            whole = extract_section_text(path, "abstract")
+            self.assertEqual(whole[:len(raw)], raw)
+
+    def test_a_bare_sup_with_no_xref_is_left_alone(self):
+        """"<sup>2</sup>" with no <xref> child could be a real superscript
+        (an exponent, a chemical formula) rather than a citation marker; only
+        a sup whose element children are ALL bibr xrefs is stripped."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, self.XML)
+            root = parse_root(path)
+            cleaned = clean_paragraph_texts(root, "abstract")
+            self.assertTrue(cleaned[0].endswith("common.2"))
+
+    def test_aligned_with_paragraphs_from_root_and_bare_text_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, BARE_ABSTRACT)
+            root = parse_root(path)
+            cleaned = clean_paragraph_texts(root, "abstract")
+            self.assertEqual(cleaned, ["Bare abstract text with no paragraph tags."])
+
+
+class TestCleanParagraphTextsBareXrefLists(unittest.TestCase):
+    """The <sup>-wrapped shape above turns out to be the minority: sampling
+    800 corpus articles, 607 carry a bare (non-sup) xref citation list, only
+    153 the sup-wrapped one. A bare xref inside "[...]" or "(...)" needs the
+    brackets removed too, not just the digits, or the result is a dangling
+    "[]" or "(-)" that reads worse than the citation did. Real shapes, pulled
+    from PMC10859687, PMC5883065, PMC8410541."""
+
+    XML = """<article>
+  <abstract><p>Ribosome biogenesis is a process [<xref rid="r1" ref-type="bibr">1</xref>].
+It involves polymerases [<xref rid="r2" ref-type="bibr">2</xref>, <xref rid="r3" ref-type="bibr">3</xref>, <xref rid="r4" ref-type="bibr">4</xref>].
+S1P is generated via two kinases (<xref rid="r5" ref-type="bibr">3</xref>–<xref rid="r6" ref-type="bibr">5</xref>). Prior work (<xref rid="r7" ref-type="bibr">1</xref>, <xref rid="r8" ref-type="bibr">2</xref>) showed this.
+The 30S ribosomal subunit [rRNA] assembles first.</p></abstract>
+  <body><p>Second para, no citations.</p></body>
+</article>"""
+
+    def cleaned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, self.XML)
+            root = parse_root(path)
+            return clean_paragraph_texts(root, "abstract")[0]
+
+    def test_single_bracketed_bare_xref_removes_the_brackets(self):
+        self.assertIn("a process. It involves", self.cleaned())
+
+    def test_comma_separated_bracketed_list_removes_the_brackets(self):
+        self.assertIn("It involves polymerases. S1P is generated", self.cleaned())
+
+    def test_dash_range_in_parens_removes_the_parens(self):
+        self.assertIn("via two kinases. Prior work", self.cleaned())
+
+    def test_comma_separated_parens_removes_the_parens(self):
+        self.assertIn("Prior work showed this.", self.cleaned())
+
+    def test_bracket_with_no_marker_inside_is_left_alone(self):
+        """"[rRNA]" has no xref child at all: not a citation, don't touch it."""
+        self.assertIn("[rRNA]", self.cleaned())
+
+
+class TestCleanParagraphTextsRealLabelInsideSup(unittest.TestCase):
+    """A <sup> can carry a real label alongside its citation, not just
+    citation notation. Real shapes, pulled from PMC8849557 (a mutation-status
+    label used throughout the paper: "BRCA1mut" means something different
+    from "BRCA1") and PMC8211653 (a cell-line name). Treating the whole
+    <sup> as one droppable unit, as the sup-wrapped case alone does, would
+    silently delete "mut"/"Revertant" along with the citation number -- a
+    meaning-changing loss in exactly the variant-status text this project
+    cares about."""
+
+    XML = """<article>
+  <abstract><p>TNBCs in BRCA1<sup>mut</sup>37</p></abstract>
+  <body><p>TNBCs in BRCA1<sup>mut<xref rid="R37" ref-type="bibr">37</xref></sup>, and PALB2<sup>mut<xref rid="R38" ref-type="bibr">38</xref></sup> carriers. CAPAN1<sup>Revertant <xref ref-type="bibr" rid="CR24">24</xref></sup>. Fig. 1<sup><xref rid="a" ref-type="bibr">1</xref></sup> shows this.</p></body>
+</article>"""
+
+    def cleaned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(tmp, self.XML)
+            root = parse_root(path)
+            return clean_paragraph_texts(root, "body")[0]
+
+    def test_real_label_sharing_a_sup_with_a_citation_survives(self):
+        text = self.cleaned()
+        self.assertIn("BRCA1mut", text)
+        self.assertIn("PALB2mut", text)
+
+    def test_the_citation_number_is_still_removed_from_that_label(self):
+        text = self.cleaned()
+        self.assertNotIn("mut37", text)
+        self.assertNotIn("mut38", text)
+
+    def test_a_real_word_label_also_survives(self):
+        self.assertIn("Revertant", self.cleaned())
+
+    def test_formatted_label_inside_sup_survives(self):
+        self.XML = ('<article><body><p>BRCA1<sup><italic>mut</italic>'
+                    '<xref ref-type="bibr">37</xref></sup> carriers.</p></body></article>')
+        self.assertEqual(self.cleaned(), "BRCA1mut carriers.")
+
+    def test_pure_sup_wrapped_citation_still_disappears_completely(self):
+        """Regression check: this fix must not weaken the plain case (no
+        real text sharing the <sup>) that TestCleanParagraphTexts covers."""
+        self.assertIn("Fig. 1 shows", self.cleaned())
 
 
 class TestSpansOverlap(unittest.TestCase):

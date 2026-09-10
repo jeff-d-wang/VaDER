@@ -201,3 +201,19 @@ class TestK1AndBAreParameters(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResourceAndCorpusBoundaries(unittest.TestCase):
+    def test_expired_deadline_stops_retrieval(self):
+        from retrieval.bm25 import build_index_from_texts
+        index = build_index_from_texts([('a', 'cancer variant')])
+        with self.assertRaises(TimeoutError):
+            index.search('cancer', deadline=0)
+
+    def test_exclusion_applies_even_when_xml_is_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xml_dir = make_corpus(tmp)
+            index = build_index(xml_dir, ['PMC1', 'PMC2'], chunker=paragraph_chunks,
+                                excluded_pmcids={'PMC1'})
+            self.assertTrue(index.chunks)
+            self.assertNotIn('PMC1', {c.pmcid for c in index.chunks})

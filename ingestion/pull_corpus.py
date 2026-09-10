@@ -231,12 +231,19 @@ class FetchResult:
     sha256: str = ""  # hex digest of the XML on disk; "" for skipped/error rows
 
 
-def fetch_one(s3, pmcid: str, out_dir: Path) -> FetchResult:
+def fetch_one(s3, pmcid: str, out_dir: Path, previous: dict | None = None) -> FetchResult:
     xml_path = out_dir / "xml" / f"{pmcid}.xml"
     if xml_path.exists() and xml_path.stat().st_size > 0:
+        digest = hashlib.sha256(xml_path.read_bytes()).hexdigest()
+        if not previous or previous.get("sha256") != digest or not previous.get("version"):
+            return FetchResult(pmcid=pmcid, status="error",
+                               note="existing XML lacks matching version/hash provenance; restore or inspect it")
         return FetchResult(pmcid=pmcid, status="ok", note="already on disk (resumed)",
+                            version=int(previous["version"]),
+                            license_code=previous.get("license_code", ""),
+                            is_open_access=previous.get("is_open_access") == "True",
                             xml_bytes=xml_path.stat().st_size,
-                            sha256=hashlib.sha256(xml_path.read_bytes()).hexdigest())
+                            sha256=digest)
 
     version = find_latest_version(s3, pmcid)
     if version is None:
@@ -274,7 +281,9 @@ def fetch_one(s3, pmcid: str, out_dir: Path) -> FetchResult:
         note = f"warning: xml did not parse cleanly ({exc})"
 
     xml_path.parent.mkdir(parents=True, exist_ok=True)
-    xml_path.write_bytes(xml_bytes)
+    temporary = xml_path.with_suffix(".xml.tmp")
+    temporary.write_bytes(xml_bytes)
+    temporary.replace(xml_path)
     return FetchResult(pmcid=pmcid, version=version, status="ok", note=note,
                         license_code=license_code, is_open_access=True, xml_bytes=len(xml_bytes),
                         sha256=hashlib.sha256(xml_bytes).hexdigest())
@@ -335,6 +344,10 @@ def main():
 
     print(f"[3/3] Downloading full-text XML from s3://{S3_BUCKET}/ with {args.workers} parallel workers...")
     manifest_path = out_dir / "manifest.csv"
+    previous = {}
+    if manifest_path.exists():
+        with manifest_path.open(newline="") as f:
+            previous = {row["pmcid"]: row for row in csv.DictReader(f)}
     fieldnames = ["pmcid", "version", "status", "note", "license_code", "is_open_access",
                   "xml_bytes", "sha256", "title", "journal", "pubdate", "retrieved_at_utc"]
 
@@ -350,7 +363,7 @@ def main():
         return thread_local_clients[tid]
 
     def worker(pmcid: str) -> FetchResult:
-        return fetch_one(get_client(), pmcid, out_dir)
+        return fetch_one(get_client(), pmcid, out_dir, previous.get(pmcid))
 
     results: list[FetchResult] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -361,11 +374,12 @@ def main():
                 print(f"      {i}/{len(pmcids)} attempted, ok={counts['ok']} skipped={counts['skipped']} error={counts['error']}")
 
     now = datetime.now(timezone.utc).isoformat()
-    with open(manifest_path, "w", newline="") as f:
+    temporary_manifest = manifest_path.with_suffix(".csv.tmp")
+    with open(temporary_manifest, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for res in results:
-            meta = metadata.get(res.pmcid, {})
+            meta = metadata.get(res.pmcid) or previous.get(res.pmcid, {})
             writer.writerow({
                 "pmcid": res.pmcid, "version": res.version, "status": res.status, "note": res.note,
                 "license_code": res.license_code, "is_open_access": res.is_open_access,
@@ -373,6 +387,9 @@ def main():
                 "journal": meta.get("journal", ""), "pubdate": meta.get("pubdate", ""),
                 "retrieved_at_utc": now,
             })
+        selected = {res.pmcid for res in results}
+        writer.writerows(row for pmcid, row in previous.items() if pmcid not in selected)
+    temporary_manifest.replace(manifest_path)
 
     finished = datetime.now(timezone.utc)
     script_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]

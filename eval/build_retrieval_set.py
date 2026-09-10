@@ -44,19 +44,24 @@ import random
 import sys
 from pathlib import Path
 
-from common.corpus_text import (iter_paragraphs_from_root, load_span_text, parse_root,
-                                section_titles_from_root)
-from eval.llm_client import DEFAULT_MODEL, groq_chat_json
+from common.corpus_text import (clean_paragraph_texts, iter_paragraphs_from_root, load_span_text,
+                                parse_root, section_titles_from_root, spans_overlap)
+from common.llm_client import DEFAULT_MODEL, groq_chat_json
 from eval.strata import load_manifest_years
-from retrieval.bm25 import tokenize
+from retrieval.bm25 import BM25Index, tokenize
 
 EVAL_DIR = Path(__file__).parent
 CORPUS_XML = EVAL_DIR.parent / "corpus" / "xml"
 MANIFEST = EVAL_DIR.parent / "corpus" / "manifest.csv"
 HELD_OUT = EVAL_DIR / "held_out" / "held_out_pmcids.csv"
 DEFAULT_OUT = EVAL_DIR / "data" / "retrieval_cases.jsonl"
+DEFAULT_PARA_INDEX = EVAL_DIR / "runs" / "bm25_index_paragraph.pkl"
 
-PROMPT_VERSION = "retrieval_qgen_v4"
+PROMPT_VERSION = "retrieval_qgen_v5"
+# v5's prompt text is unchanged from v4 (the deictic-subject rule); what
+# changed is validate()'s gate, specificity_margin. A rejected query is a
+# generator-version fact just as much as a prompt-wording change is, so the
+# provenance stamp bumps with it (same precedent as v3 -> v4).
 # The free tier caps this key at 8,000 tokens per minute, and the default
 # spends 730 of them per call on reasoning tokens for a task that is copying
 # anchors out of a paragraph and writing two sentences. At "low" a call costs
@@ -145,6 +150,22 @@ MAX_ANSWER_TOKENS = 12  # forces the shortest answering span, not its sentence
 # measured recall. That is a change in what is being measured, not an
 # improvement in retrieval, and both numbers belong in any write-up.
 MAX_RAREST_TERM_DF = 1000
+
+# specificity_margin's thresholds, checked against the lexical query only
+# (see validate()). Reject if the gold paragraph isn't at least this well
+# ranked, or a different article's best-scoring paragraph is at least as
+# strong (margin < 0 means literally outscored by another paper).
+#
+# Calibrated 2026-09-08 against 90 human-reviewed lexical query-rows from
+# both worksheets (36 valid, 18 wrong paragraphs; `--calibrate-specificity`,
+# no API calls). rank>5 or margin<0.0 rejects 8/36 (22%) of known-valid rows
+# and 11/18 (61%) of known-wrong ones. Not a clean separator, no threshold
+# tried was: this catches most of the dominant genericness pattern (a real
+# term naming a recurring category: "NOS score", "Addgene... p53 plasmids")
+# at a real but bounded cost in yield, on eval-validity grounds matching
+# MAX_RAREST_TERM_DF's own precedent, not tuned to a target pass rate.
+MAX_GENERIC_RANK = 5
+MIN_SPECIFICITY_MARGIN = 0.0
 
 QGEN_PROMPT = """You are building a retrieval evaluation set from biomedical literature.
 
@@ -278,7 +299,13 @@ def load_pmcid_pool(seed: int) -> list[str]:
 
 def candidate_paragraphs(pmcid: str) -> list[dict]:
     """Every paragraph of one article that is eligible to be sampled, with
-    its span, stratum and raw section title."""
+    its span, stratum and raw section title.
+
+    Carries two versions of the text: `text` (raw, what every offset and
+    `gold_text_sha1` is computed from and must stay on) and `clean_text`
+    (citation-marker superscripts stripped, whitespace collapsed; see
+    `common.corpus_text.clean_paragraph_texts`). Only the model prompt and
+    its validation read `clean_text`; nothing that touches provenance does."""
     root = parse_root(CORPUS_XML / f"{pmcid}.xml")
     if root is None:
         return []
@@ -286,7 +313,8 @@ def candidate_paragraphs(pmcid: str) -> list[dict]:
     for section in ("abstract", "body"):
         paragraphs = list(iter_paragraphs_from_root(root, section))
         titles = section_titles_from_root(root, section)
-        for (text, start, end), title in zip(paragraphs, titles):
+        cleaned = clean_paragraph_texts(root, section)
+        for (text, start, end), title, clean_text in zip(paragraphs, titles, cleaned):
             stratum = classify_section(section, title)
             if stratum is None or not (MIN_TOKENS <= len(tokenize(text)) <= MAX_TOKENS):
                 continue
@@ -294,6 +322,7 @@ def candidate_paragraphs(pmcid: str) -> list[dict]:
                 "paragraph_id": f"{pmcid}:{section}:{start}",
                 "gold_span": {"pmcid": pmcid, "section": section,
                               "char_start": start, "char_end": end},
+                "clean_text": clean_text,
                 "stratum": stratum, "section_title": title, "text": text,
             })
     return out
@@ -378,6 +407,55 @@ def rarest_term_df(query: str, doc_freq: dict[str, int]) -> int:
     return min(present) if present else 1 << 30
 
 
+def specificity_margin(query: str, gold_span: dict, para_index: BM25Index,
+                       top_k: int = 50) -> tuple[int | None, float]:
+    """How much does this query prefer its own gold paragraph over the best
+    match from a different article?
+
+    `rarest_term_df` catches a query with no uncommon word at all, but it
+    cannot catch the pattern a 2026-09-08 worksheet review found dominant
+    (9-10 of 15 wrong cases): a term can be a rare STRING while naming a
+    recurring CATEGORY many similarly-shaped paragraphs share. "NOS score"
+    is genuinely uncommon vocabulary, and hundreds of meta-analyses state a
+    Newcastle-Ottawa threshold in nearly the same words. No token-rarity
+    check can see that; the retriever itself can, because it scores every
+    paragraph sharing the query's vocabulary, not just whether one token is
+    corpus-rare. This reuses BM25 as the specificity oracle rather than
+    inventing a second heuristic, the same logic `score_retrieval.py
+    --measure-holes` already runs, moved earlier: a generation-time check
+    instead of a post-hoc measurement of the residual.
+
+    `para_index` must be paragraph-granular (`retrieval.chunker.paragraph_chunks`),
+    matching this eval set's own gold-span granularity: one paragraph, one
+    gold span. The phase D chunk-granular index would answer a different
+    question (does a MERGED chunk stand out), not this one.
+
+    Returns `(rank_of_gold, margin)`. `rank_of_gold` is the gold paragraph's
+    1-indexed rank among the top `top_k` hits, or None if it is not there at
+    all: a query that does not even retrieve its own source paragraph is the
+    strongest possible generic-query signal, stronger than any margin on a
+    hit that did surface. `margin` is `(gold_score - best_other_article_score)
+    / gold_score`: how far ahead the gold paragraph's score is of the
+    best-scoring paragraph from a DIFFERENT article. Small or negative means
+    some other paper's paragraph answers this query about as well as the one
+    it was written from. `-inf` when gold is absent or its score is 0 (found
+    by an untokenizable or zero-idf query), so both failure shapes sort as
+    the worst possible result rather than colliding with a real small
+    margin."""
+    hits = para_index.search(query, top_k=top_k)
+    gold_rank: int | None = None
+    gold_score = 0.0
+    best_other = 0.0
+    for rank, (chunk, score) in enumerate(hits, start=1):
+        if spans_overlap(chunk.span(), gold_span):
+            gold_rank, gold_score = rank, score
+        elif chunk.pmcid != gold_span["pmcid"]:
+            best_other = max(best_other, score)
+    if gold_rank is None or gold_score <= 0:
+        return gold_rank, float("-inf")
+    return gold_rank, (gold_score - best_other) / gold_score
+
+
 def answer_share_in_query(answer_quote: str, query: str) -> float:
     """Share of the answer's distinct tokens that already appear in the query.
 
@@ -394,7 +472,8 @@ def answer_share_in_query(answer_quote: str, query: str) -> float:
     return len(tokens & set(tokenize(query))) / len(tokens)
 
 
-def validate(out: dict, paragraph: str, doc_freq: dict[str, int] | None = None) -> str | None:
+def validate(out: dict, paragraph: str, doc_freq: dict[str, int] | None = None,
+            gold_span: dict | None = None, para_index: BM25Index | None = None) -> str | None:
     """The mechanical filters. Returns a rejection reason, or None if the
     generated item is usable.
 
@@ -472,6 +551,23 @@ def validate(out: dict, paragraph: str, doc_freq: dict[str, int] | None = None) 
             if df > MAX_RAREST_TERM_DF:
                 return (f"{style}_query is generic: its rarest term is in {df} paragraphs, "
                         f"over the {MAX_RAREST_TERM_DF} limit")
+    if para_index is not None and gold_span is not None:
+        # Checked on the LEXICAL query only, not both styles. Calibrated
+        # 2026-09-08 against both reviewed worksheets (docs/DECISION_LOG.md):
+        # applied to both styles, the check rejected 36 of 72 known-VALID
+        # query-rows (50%), because the paraphrased style is deliberately
+        # de-lexicalized (the prompt tells it to share as few words with the
+        # paragraph as possible) and so structurally scores lower against its
+        # own gold paragraph, regardless of specificity. Split by style, the
+        # confound is obvious: valid lexical margin +0.27 median, valid
+        # paraphrased margin -0.12 median -- worse than most WRONG lexical
+        # queries (-0.04). Genericness is a property of the fact/paragraph
+        # being asked about, not of a style's wording, so checking the style
+        # that isn't handicapped by design is enough for both rows.
+        rank, margin = specificity_margin(queries["lexical"], gold_span, para_index)
+        if rank is None or rank > MAX_GENERIC_RANK or margin < MIN_SPECIFICITY_MARGIN:
+            return (f"generic: gold paragraph rank {rank}, margin {margin:.2f} on the lexical "
+                    f"query (a different article's paragraph answers about as well)")
     if normalize(queries["lexical"]) == normalize(queries["paraphrased"]):
         return "the two queries are identical"
     # Same check one level down: two queries differing only in word order, or
@@ -531,7 +627,8 @@ def load_doc_freq(path: Path | None) -> dict[str, int] | None:
 
 
 def build(out_path: Path, quota: int, seed: int, model: str, limit: int | None,
-          max_articles: int, oversample: float, doc_freq: dict[str, int] | None = None) -> int:
+          max_articles: int, oversample: float, doc_freq: dict[str, int] | None = None,
+          para_index: BM25Index | None = None) -> int:
     done: set[str] = set()
     accepted: dict[str, int] = {s: 0 for s in STRATA}
     if out_path.exists():
@@ -560,14 +657,17 @@ def build(out_path: Path, quota: int, seed: int, model: str, limit: int | None,
                     continue
                 attempted += 1
                 try:
-                    out = groq_chat_json(QGEN_PROMPT.format(paragraph=cand["text"]),
+                    # clean_text, not text: the model never sees a bibliographic
+                    # superscript, and is validated against exactly what it saw.
+                    out = groq_chat_json(QGEN_PROMPT.format(paragraph=cand["clean_text"]),
                                          model=model, reasoning_effort=REASONING_EFFORT,
                                          max_retries=10)
                 except Exception as exc:  # a dead call costs one paragraph, not the run
                     key = f"call failed ({type(exc).__name__})"
                     rejected[key] = rejected.get(key, 0) + 1
                     continue
-                reason = validate(out, cand["text"], doc_freq=doc_freq)
+                reason = validate(out, cand["clean_text"], doc_freq=doc_freq,
+                                  gold_span=cand["gold_span"], para_index=para_index)
                 if reason:
                     key = reason.split(":")[0]
                     rejected[key] = rejected.get(key, 0) + 1
@@ -607,6 +707,12 @@ query is a question anyone would ask, or whether the paragraph really answers it
 measured base rate for unreviewed agent-written labels is about 50% defective (4 of 8 in phase
 A1, 5 of 11 on the strength pass), so until this is filled in, every number scored off this set
 is provisional.
+
+**A bare number sitting alone in the paragraph text below, often on its own line, is a citation
+marker** (JATS renders `<xref ref-type="bibr">` inline with no separator, e.g. "were poor.\n5\n
+CCAs can be..."), not a reported figure. The queries were generated from a version with these
+stripped; the paragraph shown below is deliberately the raw, unedited span exactly as retrieval
+would return it, so you can also catch an offset bug, not just a query defect.
 
 **Three questions per paragraph**, in order of how badly a "no" damages the set:
 
@@ -733,6 +839,81 @@ def calibrate_overlap(cases_path: Path) -> int:
     return 0
 
 
+def _worksheet_verdicts(paths: list[Path]) -> dict[str, str]:
+    """paragraph_id -> verdict, read from filled-in worksheets.
+
+    Reuses eval.make_case_worksheet's own regexes and verdict parser rather
+    than re-deriving them: that module's docstring records a real bug where
+    a naive parser turned a 45% error rate into a printed "valid, 100%", and
+    a second parser here could repeat exactly that mistake."""
+    from eval.make_case_worksheet import _CASE_RE, _VERDICT_RE, _parse_verdict
+
+    verdicts: dict[str, str] = {}
+    for path in paths:
+        current: str | None = None
+        for line in path.read_text().splitlines():
+            m = _CASE_RE.match(line.strip())
+            if m:
+                current = m.group(1)
+                continue
+            m = _VERDICT_RE.match(line.strip())
+            if m and current is not None:
+                verdicts[current] = _parse_verdict(m.group(1))
+    return verdicts
+
+
+def calibrate_specificity(cases_path: Path, worksheets: list[Path], para_index_path: Path) -> int:
+    """Does specificity_margin actually separate this project's own
+    known-wrong cases from known-valid ones?
+
+    Two worksheets (eval/retrieval_worksheet.md, n=20, and
+    eval/retrieval_worksheet_v4.md, n=50) are already human-labeled ground
+    truth for this: real queries, real gold spans, a person's valid/wrong
+    verdict. Checking the new rule against them costs zero API calls, and
+    per docs/DECISION_LOG.md's standing rule a threshold gets set on
+    evidence like this, not tuned to fit and not guessed."""
+    verdicts = _worksheet_verdicts(worksheets)
+    by_paragraph: dict[str, list[dict]] = {}
+    for row in load_cases(cases_path):
+        by_paragraph.setdefault(row["paragraph_id"], []).append(row)
+
+    print(f"Loading {para_index_path} ...")
+    para_index = BM25Index.load(para_index_path)
+
+    by_verdict: dict[str, list[tuple[int | None, float]]] = {}
+    missing = 0
+    for pid, verdict in verdicts.items():
+        rows = by_paragraph.get(pid)
+        if rows is None:
+            missing += 1
+            continue
+        for row in rows:
+            by_verdict.setdefault(verdict, []).append(
+                specificity_margin(row["query"], row["gold_span"], para_index))
+    if missing:
+        print(f"  [note] {missing} worksheet paragraph(s) not found in {cases_path} "
+              f"(stale worksheet, or reviewed rows since removed from the draft)")
+
+    print(f"\n{'verdict':10} {'n':>4} {'median margin':>14} {'not in top-50':>14}")
+    for verdict in sorted(by_verdict):
+        pairs = by_verdict[verdict]
+        margins = sorted(m for _, m in pairs)
+        not_found = sum(1 for r, _ in pairs if r is None)
+        median = margins[len(margins) // 2] if margins else float("nan")
+        print(f"{verdict:10} {len(pairs):4d} {median:14.3f} {not_found:14d}")
+
+    print("\nHow many of each verdict a candidate threshold would reject "
+          "(rank > R or margin < M):")
+    for max_rank, min_margin in ((5, 0.05), (10, 0.10), (10, 0.20), (20, 0.10)):
+        print(f"  rank>{max_rank} or margin<{min_margin}:")
+        for verdict in sorted(by_verdict):
+            pairs = by_verdict[verdict]
+            n_reject = sum(1 for r, m in pairs
+                          if r is None or r > max_rank or m < min_margin)
+            print(f"    {verdict:10} {n_reject:3d}/{len(pairs)} rejected")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -748,25 +929,48 @@ def main(argv: list[str] | None = None) -> int:
                              "absorb the filters' reject rate")
     parser.add_argument("--calibrate-overlap", action="store_true",
                         help="compare this set's lexical overlap against BEIR queries, then exit")
+    parser.add_argument("--calibrate-specificity", action="store_true",
+                        help="check specificity_margin against the reviewed worksheets' known "
+                             "valid/wrong verdicts, then exit. No API calls")
     parser.add_argument("--worksheet", type=int, metavar="N",
                         help="render N paragraphs for a human spot-check, then exit")
     parser.add_argument("--out-worksheet", default="retrieval_worksheet.md")
     parser.add_argument("--df-table", type=Path,
-                        help="term -> document-frequency JSON, enabling the specificity check. "
-                             "Without it a generic query is accepted, and a generic query cannot "
-                             "identify one gold paragraph (measured recall@10 0.562 against 0.972)")
+                        help="term -> document-frequency JSON, enabling the rarest-term "
+                             "specificity check. Without it a query with no uncommon word at all "
+                             "is accepted (measured recall@10 0.562 against 0.972)")
+    parser.add_argument("--para-index", type=Path, default=DEFAULT_PARA_INDEX,
+                        help="paragraph-granular BM25Index pickle, enabling the specificity_margin "
+                             "check (rejects a query a different article's paragraph would answer "
+                             "about as well). Pass --no-para-index to disable it")
+    parser.add_argument("--no-para-index", action="store_true",
+                        help="disable the margin check even if --para-index's default file exists")
     args = parser.parse_args(argv)
 
     if args.calibrate_overlap:
         return calibrate_overlap(args.out)
+    if args.calibrate_specificity:
+        return calibrate_specificity(
+            args.out, [EVAL_DIR / "retrieval_worksheet.md", EVAL_DIR / "retrieval_worksheet_v4.md"],
+            args.para_index)
     if args.worksheet:
         return make_worksheet(args.out, args.worksheet, args.seed, args.out_worksheet)
     doc_freq = load_doc_freq(args.df_table)
     if doc_freq is None:
-        print("  [warn] no --df-table: the specificity check is OFF and generic queries will "
-              "be accepted. See --help.", file=sys.stderr)
+        print("  [warn] no --df-table: the rarest-term specificity check is OFF and a query with "
+              "no uncommon word will be accepted. See --help.", file=sys.stderr)
+    para_index = None
+    if args.no_para_index:
+        print("  [note] --no-para-index: the specificity_margin check is OFF.", file=sys.stderr)
+    elif args.para_index.exists():
+        print(f"  loading {args.para_index} for the specificity_margin check ...")
+        para_index = BM25Index.load(args.para_index)
+    else:
+        print(f"  [warn] {args.para_index} not found: the specificity_margin check is OFF and a "
+              f"query answerable by many similar papers may be accepted. See eval/README.md, "
+              f"'bm25.py' for how to build a paragraph-granular index.", file=sys.stderr)
     return build(args.out, args.quota, args.seed, args.model, args.limit,
-                 args.max_articles, args.oversample, doc_freq)
+                 args.max_articles, args.oversample, doc_freq, para_index)
 
 
 if __name__ == "__main__":

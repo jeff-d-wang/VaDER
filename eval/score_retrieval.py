@@ -28,6 +28,8 @@ Usage:
 """
 from __future__ import annotations
 
+from eval.datasets import validate_cases
+
 import argparse
 import json
 import random
@@ -36,10 +38,10 @@ import time
 from pathlib import Path
 
 from common.corpus_text import Chunk, chunk_hits_span
-from common.run_meta import append_run, config_hash, git_sha
+from common.run_meta import file_hash, source_hash, append_run, config_hash, git_sha
 from common.stats import wilson_ci
 from eval.compare_runs import mcnemar_exact_p
-from eval.llm_client import DEFAULT_MODEL, groq_chat_json
+from common.llm_client import DEFAULT_MODEL, groq_chat_json
 from retrieval import bm25, ir_metrics
 from retrieval.bm25 import BM25Index
 from retrieval.ir_metrics import QueryResult
@@ -340,7 +342,7 @@ def measure_holes(cases: list[dict], results: dict[str, QueryResult], index: BM2
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
+    parser.add_argument("--cases", type=Path, required=True)
     parser.add_argument("--index", type=Path, default=EVAL_DIR / "runs" / "bm25_index.pkl")
     parser.add_argument("--top-k", type=int, default=100, help="retrieval depth; recall@100 needs 100")
     parser.add_argument("--report-k", type=int, default=10, help="k for the paired and per-stratum tests")
@@ -353,9 +355,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-missing-gold", action="store_true",
                         help="report anyway when gold spans are absent from the index "
                              "(they will score as misses that mean nothing)")
+    parser.add_argument("--exploratory", action="store_true")
     args = parser.parse_args(argv)
 
     cases = load_cases(args.cases)
+    try:
+        validate_cases(cases, exploratory=args.exploratory)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     print(f"{args.cases}: {len(cases)} queries over "
           f"{len({c['paragraph_id'] for c in cases})} paragraphs")
     index = BM25Index.load(args.index)
@@ -382,7 +390,9 @@ def main(argv: list[str] | None = None) -> int:
     # they vary run to run and would make every hash unique.
     config = {"retriever": "bm25", "k1": bm25.K1, "b": bm25.B, "top_k": args.top_k,
               "index": str(args.index), "n_indexed": index.n_docs,
-              "cases": str(args.cases), "n_queries": len(cases), "git_sha": git_sha()}
+              "cases": str(args.cases), "n_queries": len(cases), "git_sha": git_sha(),
+              "cases_sha256": file_hash(args.cases), "index_sha256": file_hash(args.index),
+              "source_hash": source_hash(), "report_k": args.report_k, "exploratory": args.exploratory}
     payload = {
         "config": config, "config_hash": config_hash(config),
         "meta": {"cases": str(args.cases), "n_queries": len(cases),
@@ -419,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         overall = payload["overall"]
         run_id = append_run(
             eval_set="retrieval", run_config=config, results_path=str(args.out),
+            input_paths={"cases": args.cases, "index": args.index},
             metrics={f"recall@{args.report_k}": overall.get(f"recall@{args.report_k}"),
                      "mrr": overall.get("mrr"), "n_queries": len(cases)})
         print(f"Registered run {run_id}")

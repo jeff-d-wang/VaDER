@@ -33,7 +33,7 @@ from pathlib import Path
 from common.corpus_text import load_span_text
 from eval.baselines._runner import (CASES_PATH, EXCERPT_PROMPT, answer_from,
                                     format_excerpts, load_cases, map_claims, write_run)
-from eval.llm_client import DEFAULT_MODEL, groq_chat_json
+from common.llm_client import DEFAULT_MODEL, groq_chat_json
 
 XML_DIR = Path(__file__).parent.parent.parent / "corpus" / "xml"
 PROMPT_VERSION = "oracle_spans_v2"
@@ -84,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     answers = run(load_cases(Path(args.cases)), args.model, Path(args.xml_dir))
-    write_run(Path(args.out), answers, args.model, PROMPT_VERSION, context="gold_spans_only")
+    write_run(Path(args.out), answers, args.model, PROMPT_VERSION, context="gold_spans_only",
+              input_paths={"cases": Path(args.cases)})
     return 0
 
 

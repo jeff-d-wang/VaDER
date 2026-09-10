@@ -80,7 +80,7 @@ def trace_request(name: str, **attributes):
     token = _current.set(trace)
     try:
         with span(name, **attributes):
-            yield
+            yield trace.trace_id
     finally:
         _current.reset(token)
 

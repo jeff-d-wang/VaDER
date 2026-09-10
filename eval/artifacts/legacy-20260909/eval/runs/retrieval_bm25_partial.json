@@ -1,0 +1,2465 @@
+{
+  "config": {
+    "retriever": "bm25",
+    "k1": 1.5,
+    "b": 0.75,
+    "top_k": 100,
+    "index": "/Users/jeffwang/VSCode_Workspace/VaDER/eval/runs/bm25_index.pkl",
+    "n_indexed": 344900,
+    "cases": "/Users/jeffwang/VSCode_Workspace/VaDER/eval/data/retrieval_cases.jsonl",
+    "n_queries": 276,
+    "git_sha": "8c710c3"
+  },
+  "config_hash": "cfg-50865433fd64",
+  "meta": {
+    "cases": "/Users/jeffwang/VSCode_Workspace/VaDER/eval/data/retrieval_cases.jsonl",
+    "n_queries": 276,
+    "n_paragraphs": 138,
+    "index": "/Users/jeffwang/VSCode_Workspace/VaDER/eval/runs/bm25_index.pkl",
+    "n_indexed": 344900,
+    "top_k": 100,
+    "gold_spans_missing_from_index": 0,
+    "search_ms_per_query": 10907.5
+  },
+  "overall": {
+    "recall@1": {
+      "value": 0.5543,
+      "ci95": [
+        0.4928,
+        0.6123
+      ],
+      "n": 276
+    },
+    "recall@5": {
+      "value": 0.7283,
+      "ci95": [
+        0.6775,
+        0.779
+      ],
+      "n": 276
+    },
+    "recall@10": {
+      "value": 0.8007,
+      "ci95": [
+        0.7536,
+        0.8478
+      ],
+      "n": 276
+    },
+    "recall@100": {
+      "value": 0.9384,
+      "ci95": [
+        0.9094,
+        0.9638
+      ],
+      "n": 276
+    },
+    "ndcg@10": {
+      "value": 0.6707,
+      "ci95": [
+        0.6243,
+        0.7167
+      ],
+      "n": 276
+    },
+    "mrr": {
+      "value": 0.6368,
+      "ci95": [
+        0.5885,
+        0.6845
+      ],
+      "n": 276
+    }
+  },
+  "by_style": {
+    "lexical": {
+      "recall@1": {
+        "value": 0.6522,
+        "ci95": [
+          0.5725,
+          0.7319
+        ],
+        "n": 138
+      },
+      "recall@5": {
+        "value": 0.8333,
+        "ci95": [
+          0.7681,
+          0.8986
+        ],
+        "n": 138
+      },
+      "recall@10": {
+        "value": 0.8696,
+        "ci95": [
+          0.8116,
+          0.9203
+        ],
+        "n": 138
+      },
+      "recall@100": {
+        "value": 0.971,
+        "ci95": [
+          0.942,
+          0.9928
+        ],
+        "n": 138
+      },
+      "ndcg@10": {
+        "value": 0.7586,
+        "ci95": [
+          0.6964,
+          0.8191
+        ],
+        "n": 138
+      },
+      "mrr": {
+        "value": 0.7282,
+        "ci95": [
+          0.6627,
+          0.7953
+        ],
+        "n": 138
+      }
+    },
+    "paraphrased": {
+      "recall@1": {
+        "value": 0.4565,
+        "ci95": [
+          0.3696,
+          0.5435
+        ],
+        "n": 138
+      },
+      "recall@5": {
+        "value": 0.6232,
+        "ci95": [
+          0.5435,
+          0.7101
+        ],
+        "n": 138
+      },
+      "recall@10": {
+        "value": 0.7319,
+        "ci95": [
+          0.6522,
+          0.8043
+        ],
+        "n": 138
+      },
+      "recall@100": {
+        "value": 0.9058,
+        "ci95": [
+          0.8551,
+          0.9493
+        ],
+        "n": 138
+      },
+      "ndcg@10": {
+        "value": 0.5828,
+        "ci95": [
+          0.5104,
+          0.6557
+        ],
+        "n": 138
+      },
+      "mrr": {
+        "value": 0.5455,
+        "ci95": [
+          0.4689,
+          0.6212
+        ],
+        "n": 138
+      }
+    }
+  },
+  "by_stratum": {
+    "abstract": {
+      "value": 0.8182,
+      "ci95": [
+        0.7358,
+        0.8791
+      ],
+      "n": 110
+    },
+    "intro": {
+      "value": 0.7727,
+      "ci95": [
+        0.686,
+        0.8411
+      ],
+      "n": 110
+    },
+    "methods": {
+      "value": 0.8214,
+      "ci95": [
+        0.7016,
+        0.9
+      ],
+      "n": 56
+    }
+  },
+  "by_overlap": {
+    "0.00-0.50": {
+      "value": 0.4286,
+      "ci95": [
+        0.2651,
+        0.6093
+      ],
+      "n": 28
+    },
+    "0.50-0.65": {
+      "value": 0.7667,
+      "ci95": [
+        0.6695,
+        0.842
+      ],
+      "n": 90
+    },
+    "0.65-0.80": {
+      "value": 0.8725,
+      "ci95": [
+        0.7941,
+        0.924
+      ],
+      "n": 102
+    },
+    "0.80-0.90": {
+      "value": 0.913,
+      "ci95": [
+        0.7968,
+        0.9657
+      ],
+      "n": 46
+    },
+    "0.90-1.01": {
+      "value": 0.9,
+      "ci95": [
+        0.5958,
+        0.9821
+      ],
+      "n": 10
+    }
+  },
+  "lexical_bias": {
+    "n_pairs": 138,
+    "k": 10,
+    "lexical": 0.8696,
+    "paraphrased": 0.7319,
+    "delta": 0.1377,
+    "discordant_b": 21,
+    "discordant_c": 2,
+    "mcnemar_p": 0.0001
+  },
+  "holes": null,
+  "per_query": [
+    {
+      "query_id": "PMC7297329:abstract:0#lexical",
+      "paragraph_id": "PMC7297329:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8182,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC7297329:abstract:0#paraphrased",
+      "paragraph_id": "PMC7297329:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4545,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC8566594:abstract:0#lexical",
+      "paragraph_id": "PMC8566594:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5263,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC8566594:abstract:0#paraphrased",
+      "paragraph_id": "PMC8566594:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5714,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9691822:abstract:321#lexical",
+      "paragraph_id": "PMC9691822:abstract:321",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.9,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9691822:abstract:321#paraphrased",
+      "paragraph_id": "PMC9691822:abstract:321",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5833,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11594099:abstract:0#lexical",
+      "paragraph_id": "PMC11594099:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8667,
+      "rank_of_gold": 57
+    },
+    {
+      "query_id": "PMC11594099:abstract:0#paraphrased",
+      "paragraph_id": "PMC11594099:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8889,
+      "rank_of_gold": 19
+    },
+    {
+      "query_id": "PMC9543999:abstract:0#lexical",
+      "paragraph_id": "PMC9543999:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9543999:abstract:0#paraphrased",
+      "paragraph_id": "PMC9543999:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6452,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC1557738:abstract:0#lexical",
+      "paragraph_id": "PMC1557738:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC1557738:abstract:0#paraphrased",
+      "paragraph_id": "PMC1557738:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6364,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3221648:abstract:0#lexical",
+      "paragraph_id": "PMC3221648:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6818,
+      "rank_of_gold": 11
+    },
+    {
+      "query_id": "PMC3221648:abstract:0#paraphrased",
+      "paragraph_id": "PMC3221648:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4286,
+      "rank_of_gold": 23
+    },
+    {
+      "query_id": "PMC7382072:abstract:421#lexical",
+      "paragraph_id": "PMC7382072:abstract:421",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5333,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC7382072:abstract:421#paraphrased",
+      "paragraph_id": "PMC7382072:abstract:421",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6154,
+      "rank_of_gold": 20
+    },
+    {
+      "query_id": "PMC9636504:abstract:0#lexical",
+      "paragraph_id": "PMC9636504:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6923,
+      "rank_of_gold": 14
+    },
+    {
+      "query_id": "PMC9636504:abstract:0#paraphrased",
+      "paragraph_id": "PMC9636504:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8095,
+      "rank_of_gold": 10
+    },
+    {
+      "query_id": "PMC10445354:abstract:0#lexical",
+      "paragraph_id": "PMC10445354:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8824,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10445354:abstract:0#paraphrased",
+      "paragraph_id": "PMC10445354:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9633290:abstract:0#lexical",
+      "paragraph_id": "PMC9633290:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6316,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC9633290:abstract:0#paraphrased",
+      "paragraph_id": "PMC9633290:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5714,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC11473753:abstract:132#lexical",
+      "paragraph_id": "PMC11473753:abstract:132",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 5
+    },
+    {
+      "query_id": "PMC11473753:abstract:132#paraphrased",
+      "paragraph_id": "PMC11473753:abstract:132",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4545,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC8584247:abstract:0#lexical",
+      "paragraph_id": "PMC8584247:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.625,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8584247:abstract:0#paraphrased",
+      "paragraph_id": "PMC8584247:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4444,
+      "rank_of_gold": 5
+    },
+    {
+      "query_id": "PMC11324510:abstract:0#lexical",
+      "paragraph_id": "PMC11324510:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11324510:abstract:0#paraphrased",
+      "paragraph_id": "PMC11324510:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6875,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5559773:abstract:0#lexical",
+      "paragraph_id": "PMC5559773:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6471,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5559773:abstract:0#paraphrased",
+      "paragraph_id": "PMC5559773:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4737,
+      "rank_of_gold": 12
+    },
+    {
+      "query_id": "PMC13362038:abstract:0#lexical",
+      "paragraph_id": "PMC13362038:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7273,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC13362038:abstract:0#paraphrased",
+      "paragraph_id": "PMC13362038:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6154,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11449088:abstract:520#lexical",
+      "paragraph_id": "PMC11449088:abstract:520",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4211,
+      "rank_of_gold": 63
+    },
+    {
+      "query_id": "PMC11449088:abstract:520#paraphrased",
+      "paragraph_id": "PMC11449088:abstract:520",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4118,
+      "rank_of_gold": 18
+    },
+    {
+      "query_id": "PMC10379391:abstract:0#lexical",
+      "paragraph_id": "PMC10379391:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10379391:abstract:0#paraphrased",
+      "paragraph_id": "PMC10379391:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4737,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12414081:abstract:0#lexical",
+      "paragraph_id": "PMC12414081:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC12414081:abstract:0#paraphrased",
+      "paragraph_id": "PMC12414081:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5263,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC5593158:abstract:0#lexical",
+      "paragraph_id": "PMC5593158:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8095,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5593158:abstract:0#paraphrased",
+      "paragraph_id": "PMC5593158:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.48,
+      "rank_of_gold": 17
+    },
+    {
+      "query_id": "PMC10965219:abstract:0#lexical",
+      "paragraph_id": "PMC10965219:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.65,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10965219:abstract:0#paraphrased",
+      "paragraph_id": "PMC10965219:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC7487731:abstract:546#lexical",
+      "paragraph_id": "PMC7487731:abstract:546",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7487731:abstract:546#paraphrased",
+      "paragraph_id": "PMC7487731:abstract:546",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4762,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7683535:abstract:0#lexical",
+      "paragraph_id": "PMC7683535:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6111,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC7683535:abstract:0#paraphrased",
+      "paragraph_id": "PMC7683535:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5238,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8481040:abstract:0#lexical",
+      "paragraph_id": "PMC8481040:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.9286,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8481040:abstract:0#paraphrased",
+      "paragraph_id": "PMC8481040:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12751124:abstract:0#lexical",
+      "paragraph_id": "PMC12751124:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8571,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12751124:abstract:0#paraphrased",
+      "paragraph_id": "PMC12751124:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7692,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC12275984:abstract:0#lexical",
+      "paragraph_id": "PMC12275984:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC12275984:abstract:0#paraphrased",
+      "paragraph_id": "PMC12275984:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7037,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC4391687:abstract:0#lexical",
+      "paragraph_id": "PMC4391687:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7059,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4391687:abstract:0#paraphrased",
+      "paragraph_id": "PMC4391687:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6154,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8501630:abstract:0#lexical",
+      "paragraph_id": "PMC8501630:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8462,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8501630:abstract:0#paraphrased",
+      "paragraph_id": "PMC8501630:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6154,
+      "rank_of_gold": 10
+    },
+    {
+      "query_id": "PMC1599749:abstract:0#lexical",
+      "paragraph_id": "PMC1599749:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC1599749:abstract:0#paraphrased",
+      "paragraph_id": "PMC1599749:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5882,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC7576867:abstract:352#lexical",
+      "paragraph_id": "PMC7576867:abstract:352",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7576867:abstract:352#paraphrased",
+      "paragraph_id": "PMC7576867:abstract:352",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC2374363:abstract:0#lexical",
+      "paragraph_id": "PMC2374363:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC2374363:abstract:0#paraphrased",
+      "paragraph_id": "PMC2374363:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3849250:abstract:0#lexical",
+      "paragraph_id": "PMC3849250:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC3849250:abstract:0#paraphrased",
+      "paragraph_id": "PMC3849250:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5625,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5980867:abstract:0#lexical",
+      "paragraph_id": "PMC5980867:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7222,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC5980867:abstract:0#paraphrased",
+      "paragraph_id": "PMC5980867:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4519264:abstract:280#lexical",
+      "paragraph_id": "PMC4519264:abstract:280",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4519264:abstract:280#paraphrased",
+      "paragraph_id": "PMC4519264:abstract:280",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7692,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8796069:abstract:149#lexical",
+      "paragraph_id": "PMC8796069:abstract:149",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7692,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8796069:abstract:149#paraphrased",
+      "paragraph_id": "PMC8796069:abstract:149",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.625,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8406897:abstract:0#lexical",
+      "paragraph_id": "PMC8406897:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.875,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8406897:abstract:0#paraphrased",
+      "paragraph_id": "PMC8406897:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6316,
+      "rank_of_gold": 9
+    },
+    {
+      "query_id": "PMC13385242:abstract:165#lexical",
+      "paragraph_id": "PMC13385242:abstract:165",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC13385242:abstract:165#paraphrased",
+      "paragraph_id": "PMC13385242:abstract:165",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.3333,
+      "rank_of_gold": 15
+    },
+    {
+      "query_id": "PMC12374102:abstract:0#lexical",
+      "paragraph_id": "PMC12374102:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7692,
+      "rank_of_gold": 23
+    },
+    {
+      "query_id": "PMC12374102:abstract:0#paraphrased",
+      "paragraph_id": "PMC12374102:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6429,
+      "rank_of_gold": 18
+    },
+    {
+      "query_id": "PMC8260509:abstract:0#lexical",
+      "paragraph_id": "PMC8260509:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.85,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8260509:abstract:0#paraphrased",
+      "paragraph_id": "PMC8260509:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7402303:abstract:0#lexical",
+      "paragraph_id": "PMC7402303:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7647,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC7402303:abstract:0#paraphrased",
+      "paragraph_id": "PMC7402303:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.65,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11974012:abstract:0#lexical",
+      "paragraph_id": "PMC11974012:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11974012:abstract:0#paraphrased",
+      "paragraph_id": "PMC11974012:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.375,
+      "rank_of_gold": 9
+    },
+    {
+      "query_id": "PMC8496027:abstract:0#lexical",
+      "paragraph_id": "PMC8496027:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6429,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC8496027:abstract:0#paraphrased",
+      "paragraph_id": "PMC8496027:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6875,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC6220520:abstract:0#lexical",
+      "paragraph_id": "PMC6220520:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.8125,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC6220520:abstract:0#paraphrased",
+      "paragraph_id": "PMC6220520:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12434397:abstract:534#lexical",
+      "paragraph_id": "PMC12434397:abstract:534",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7647,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12434397:abstract:534#paraphrased",
+      "paragraph_id": "PMC12434397:abstract:534",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.3684,
+      "rank_of_gold": 12
+    },
+    {
+      "query_id": "PMC1570364:abstract:0#lexical",
+      "paragraph_id": "PMC1570364:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC1570364:abstract:0#paraphrased",
+      "paragraph_id": "PMC1570364:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9338933:abstract:0#lexical",
+      "paragraph_id": "PMC9338933:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.85,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9338933:abstract:0#paraphrased",
+      "paragraph_id": "PMC9338933:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.55,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5806316:abstract:477#lexical",
+      "paragraph_id": "PMC5806316:abstract:477",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5806316:abstract:477#paraphrased",
+      "paragraph_id": "PMC5806316:abstract:477",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5882,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7291851:abstract:0#lexical",
+      "paragraph_id": "PMC7291851:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.9286,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7291851:abstract:0#paraphrased",
+      "paragraph_id": "PMC7291851:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5238,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12476058:abstract:301#lexical",
+      "paragraph_id": "PMC12476058:abstract:301",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC12476058:abstract:301#paraphrased",
+      "paragraph_id": "PMC12476058:abstract:301",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC7476410:abstract:0#lexical",
+      "paragraph_id": "PMC7476410:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7333,
+      "rank_of_gold": 17
+    },
+    {
+      "query_id": "PMC7476410:abstract:0#paraphrased",
+      "paragraph_id": "PMC7476410:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 13
+    },
+    {
+      "query_id": "PMC4621916:abstract:0#lexical",
+      "paragraph_id": "PMC4621916:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7619,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4621916:abstract:0#paraphrased",
+      "paragraph_id": "PMC4621916:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5455,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4582980:abstract:0#lexical",
+      "paragraph_id": "PMC4582980:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.875,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4582980:abstract:0#paraphrased",
+      "paragraph_id": "PMC4582980:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6471,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3841325:abstract:0#lexical",
+      "paragraph_id": "PMC3841325:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6316,
+      "rank_of_gold": 5
+    },
+    {
+      "query_id": "PMC3841325:abstract:0#paraphrased",
+      "paragraph_id": "PMC3841325:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7222,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3678719:abstract:0#lexical",
+      "paragraph_id": "PMC3678719:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.6471,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3678719:abstract:0#paraphrased",
+      "paragraph_id": "PMC3678719:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.4375,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC3558401:abstract:0#lexical",
+      "paragraph_id": "PMC3558401:abstract:0",
+      "style": "lexical",
+      "stratum": "abstract",
+      "lexical_overlap": 0.7368,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3558401:abstract:0#paraphrased",
+      "paragraph_id": "PMC3558401:abstract:0",
+      "style": "paraphrased",
+      "stratum": "abstract",
+      "lexical_overlap": 0.5263,
+      "rank_of_gold": 10
+    },
+    {
+      "query_id": "PMC3794832:body:0#lexical",
+      "paragraph_id": "PMC3794832:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 16
+    },
+    {
+      "query_id": "PMC3794832:body:0#paraphrased",
+      "paragraph_id": "PMC3794832:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.619,
+      "rank_of_gold": 43
+    },
+    {
+      "query_id": "PMC10374654:body:0#lexical",
+      "paragraph_id": "PMC10374654:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 15
+    },
+    {
+      "query_id": "PMC10374654:body:0#paraphrased",
+      "paragraph_id": "PMC10374654:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6364,
+      "rank_of_gold": 27
+    },
+    {
+      "query_id": "PMC5400656:body:0#lexical",
+      "paragraph_id": "PMC5400656:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8571,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5400656:body:0#paraphrased",
+      "paragraph_id": "PMC5400656:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.375,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5113789:body:0#lexical",
+      "paragraph_id": "PMC5113789:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6923,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5113789:body:0#paraphrased",
+      "paragraph_id": "PMC5113789:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5833,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC7572377:body:0#lexical",
+      "paragraph_id": "PMC7572377:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7647,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7572377:body:0#paraphrased",
+      "paragraph_id": "PMC7572377:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.3684,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC8141236:body:0#lexical",
+      "paragraph_id": "PMC8141236:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.9286,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8141236:body:0#paraphrased",
+      "paragraph_id": "PMC8141236:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC6586039:body:0#lexical",
+      "paragraph_id": "PMC6586039:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8261,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC6586039:body:0#paraphrased",
+      "paragraph_id": "PMC6586039:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.619,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3466113:body:0#lexical",
+      "paragraph_id": "PMC3466113:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7895,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3466113:body:0#paraphrased",
+      "paragraph_id": "PMC3466113:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8904525:body:0#lexical",
+      "paragraph_id": "PMC8904525:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7368,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8904525:body:0#paraphrased",
+      "paragraph_id": "PMC8904525:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC6558765:body:0#lexical",
+      "paragraph_id": "PMC6558765:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.9286,
+      "rank_of_gold": 26
+    },
+    {
+      "query_id": "PMC6558765:body:0#paraphrased",
+      "paragraph_id": "PMC6558765:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.4706,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC11420749:body:1183#lexical",
+      "paragraph_id": "PMC11420749:body:1183",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC11420749:body:1183#paraphrased",
+      "paragraph_id": "PMC11420749:body:1183",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6923,
+      "rank_of_gold": 7
+    },
+    {
+      "query_id": "PMC5683588:body:0#lexical",
+      "paragraph_id": "PMC5683588:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6923,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC5683588:body:0#paraphrased",
+      "paragraph_id": "PMC5683588:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.4667,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC11476461:body:0#lexical",
+      "paragraph_id": "PMC11476461:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11476461:body:0#paraphrased",
+      "paragraph_id": "PMC11476461:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5882,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12666468:body:167#lexical",
+      "paragraph_id": "PMC12666468:body:167",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12666468:body:167#paraphrased",
+      "paragraph_id": "PMC12666468:body:167",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11141646:body:0#lexical",
+      "paragraph_id": "PMC11141646:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11141646:body:0#paraphrased",
+      "paragraph_id": "PMC11141646:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12751124:body:0#lexical",
+      "paragraph_id": "PMC12751124:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 17
+    },
+    {
+      "query_id": "PMC12751124:body:0#paraphrased",
+      "paragraph_id": "PMC12751124:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 70
+    },
+    {
+      "query_id": "PMC11306633:body:0#lexical",
+      "paragraph_id": "PMC11306633:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8571,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11306633:body:0#paraphrased",
+      "paragraph_id": "PMC11306633:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5714,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11930871:body:0#lexical",
+      "paragraph_id": "PMC11930871:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7917,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11930871:body:0#paraphrased",
+      "paragraph_id": "PMC11930871:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6957,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7081316:body:0#lexical",
+      "paragraph_id": "PMC7081316:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8462,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7081316:body:0#paraphrased",
+      "paragraph_id": "PMC7081316:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6429,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8305371:body:224#lexical",
+      "paragraph_id": "PMC8305371:body:224",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8305371:body:224#paraphrased",
+      "paragraph_id": "PMC8305371:body:224",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5882,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC7596644:body:682#lexical",
+      "paragraph_id": "PMC7596644:body:682",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.9091,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC7596644:body:682#paraphrased",
+      "paragraph_id": "PMC7596644:body:682",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.8125,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3470543:body:0#lexical",
+      "paragraph_id": "PMC3470543:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.9333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3470543:body:0#paraphrased",
+      "paragraph_id": "PMC3470543:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5238,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC10022277:body:0#lexical",
+      "paragraph_id": "PMC10022277:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7647,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10022277:body:0#paraphrased",
+      "paragraph_id": "PMC10022277:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 6
+    },
+    {
+      "query_id": "PMC7473586:body:0#lexical",
+      "paragraph_id": "PMC7473586:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7473586:body:0#paraphrased",
+      "paragraph_id": "PMC7473586:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5294,
+      "rank_of_gold": 64
+    },
+    {
+      "query_id": "PMC13382927:body:0#lexical",
+      "paragraph_id": "PMC13382927:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6111,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC13382927:body:0#paraphrased",
+      "paragraph_id": "PMC13382927:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.2857,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10278489:body:0#lexical",
+      "paragraph_id": "PMC10278489:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.5294,
+      "rank_of_gold": 14
+    },
+    {
+      "query_id": "PMC10278489:body:0#paraphrased",
+      "paragraph_id": "PMC10278489:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.375,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC3827141:body:0#lexical",
+      "paragraph_id": "PMC3827141:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.9333,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC3827141:body:0#paraphrased",
+      "paragraph_id": "PMC3827141:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8410541:body:460#lexical",
+      "paragraph_id": "PMC8410541:body:460",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8410541:body:460#paraphrased",
+      "paragraph_id": "PMC8410541:body:460",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5263,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7788962:body:0#lexical",
+      "paragraph_id": "PMC7788962:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC7788962:body:0#paraphrased",
+      "paragraph_id": "PMC7788962:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5385,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC6446860:body:0#lexical",
+      "paragraph_id": "PMC6446860:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC6446860:body:0#paraphrased",
+      "paragraph_id": "PMC6446860:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5333,
+      "rank_of_gold": 9
+    },
+    {
+      "query_id": "PMC12367850:body:0#lexical",
+      "paragraph_id": "PMC12367850:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6842,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12367850:body:0#paraphrased",
+      "paragraph_id": "PMC12367850:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7574166:body:0#lexical",
+      "paragraph_id": "PMC7574166:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 18
+    },
+    {
+      "query_id": "PMC7574166:body:0#paraphrased",
+      "paragraph_id": "PMC7574166:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.8462,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8290257:body:630#lexical",
+      "paragraph_id": "PMC8290257:body:630",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6364,
+      "rank_of_gold": 7
+    },
+    {
+      "query_id": "PMC8290257:body:630#paraphrased",
+      "paragraph_id": "PMC8290257:body:630",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6154,
+      "rank_of_gold": 50
+    },
+    {
+      "query_id": "PMC3521761:body:0#lexical",
+      "paragraph_id": "PMC3521761:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6786,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3521761:body:0#paraphrased",
+      "paragraph_id": "PMC3521761:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC5487773:body:0#lexical",
+      "paragraph_id": "PMC5487773:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7222,
+      "rank_of_gold": 5
+    },
+    {
+      "query_id": "PMC5487773:body:0#paraphrased",
+      "paragraph_id": "PMC5487773:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5789,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC7523289:body:0#lexical",
+      "paragraph_id": "PMC7523289:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.875,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7523289:body:0#paraphrased",
+      "paragraph_id": "PMC7523289:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7647,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC13218332:body:0#lexical",
+      "paragraph_id": "PMC13218332:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7826,
+      "rank_of_gold": 6
+    },
+    {
+      "query_id": "PMC13218332:body:0#paraphrased",
+      "paragraph_id": "PMC13218332:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.625,
+      "rank_of_gold": 10
+    },
+    {
+      "query_id": "PMC10469654:body:0#lexical",
+      "paragraph_id": "PMC10469654:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10469654:body:0#paraphrased",
+      "paragraph_id": "PMC10469654:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5556,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC7057666:body:0#lexical",
+      "paragraph_id": "PMC7057666:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8889,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7057666:body:0#paraphrased",
+      "paragraph_id": "PMC7057666:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.625,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4621916:body:0#lexical",
+      "paragraph_id": "PMC4621916:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8182,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4621916:body:0#paraphrased",
+      "paragraph_id": "PMC4621916:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5714,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11826129:body:0#lexical",
+      "paragraph_id": "PMC11826129:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.85,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC11826129:body:0#paraphrased",
+      "paragraph_id": "PMC11826129:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC11884457:body:0#lexical",
+      "paragraph_id": "PMC11884457:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC11884457:body:0#paraphrased",
+      "paragraph_id": "PMC11884457:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5714,
+      "rank_of_gold": 18
+    },
+    {
+      "query_id": "PMC4998541:body:0#lexical",
+      "paragraph_id": "PMC4998541:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4998541:body:0#paraphrased",
+      "paragraph_id": "PMC4998541:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7308,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4056366:body:0#lexical",
+      "paragraph_id": "PMC4056366:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC4056366:body:0#paraphrased",
+      "paragraph_id": "PMC4056366:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7273,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC7694425:body:0#lexical",
+      "paragraph_id": "PMC7694425:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6923,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC7694425:body:0#paraphrased",
+      "paragraph_id": "PMC7694425:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.4167,
+      "rank_of_gold": 11
+    },
+    {
+      "query_id": "PMC3975345:body:0#lexical",
+      "paragraph_id": "PMC3975345:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3975345:body:0#paraphrased",
+      "paragraph_id": "PMC3975345:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.3333,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC12079100:body:2186#lexical",
+      "paragraph_id": "PMC12079100:body:2186",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12079100:body:2186#paraphrased",
+      "paragraph_id": "PMC12079100:body:2186",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.3571,
+      "rank_of_gold": 70
+    },
+    {
+      "query_id": "PMC4094444:body:0#lexical",
+      "paragraph_id": "PMC4094444:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4094444:body:0#paraphrased",
+      "paragraph_id": "PMC4094444:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3751431:body:0#lexical",
+      "paragraph_id": "PMC3751431:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8824,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC3751431:body:0#paraphrased",
+      "paragraph_id": "PMC3751431:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5789,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC11187164:body:273#lexical",
+      "paragraph_id": "PMC11187164:body:273",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8125,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11187164:body:273#paraphrased",
+      "paragraph_id": "PMC11187164:body:273",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.4762,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10859687:body:0#lexical",
+      "paragraph_id": "PMC10859687:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 7
+    },
+    {
+      "query_id": "PMC10859687:body:0#paraphrased",
+      "paragraph_id": "PMC10859687:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.4737,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC6088509:body:0#lexical",
+      "paragraph_id": "PMC6088509:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8182,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC6088509:body:0#paraphrased",
+      "paragraph_id": "PMC6088509:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.7692,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9856492:body:0#lexical",
+      "paragraph_id": "PMC9856492:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.7368,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9856492:body:0#paraphrased",
+      "paragraph_id": "PMC9856492:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.5625,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC12476487:body:0#lexical",
+      "paragraph_id": "PMC12476487:body:0",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8889,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12476487:body:0#paraphrased",
+      "paragraph_id": "PMC12476487:body:0",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6957,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC9249987:body:979#lexical",
+      "paragraph_id": "PMC9249987:body:979",
+      "style": "lexical",
+      "stratum": "intro",
+      "lexical_overlap": 0.8333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9249987:body:979#paraphrased",
+      "paragraph_id": "PMC9249987:body:979",
+      "style": "paraphrased",
+      "stratum": "intro",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7136185:body:16386#lexical",
+      "paragraph_id": "PMC7136185:body:16386",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7917,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC7136185:body:16386#paraphrased",
+      "paragraph_id": "PMC7136185:body:16386",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC3832645:body:3133#lexical",
+      "paragraph_id": "PMC3832645:body:3133",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC3832645:body:3133#paraphrased",
+      "paragraph_id": "PMC3832645:body:3133",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC4391687:body:19160#lexical",
+      "paragraph_id": "PMC4391687:body:19160",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.6429,
+      "rank_of_gold": 5
+    },
+    {
+      "query_id": "PMC4391687:body:19160#paraphrased",
+      "paragraph_id": "PMC4391687:body:19160",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5455,
+      "rank_of_gold": 6
+    },
+    {
+      "query_id": "PMC6488144:body:1935#lexical",
+      "paragraph_id": "PMC6488144:body:1935",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.9333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC6488144:body:1935#paraphrased",
+      "paragraph_id": "PMC6488144:body:1935",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6429,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12915379:body:6516#lexical",
+      "paragraph_id": "PMC12915379:body:6516",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.9231,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12915379:body:6516#paraphrased",
+      "paragraph_id": "PMC12915379:body:6516",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5625,
+      "rank_of_gold": 18
+    },
+    {
+      "query_id": "PMC8462566:body:6745#lexical",
+      "paragraph_id": "PMC8462566:body:6745",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8462566:body:6745#paraphrased",
+      "paragraph_id": "PMC8462566:body:6745",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5556,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4465499:body:16199#lexical",
+      "paragraph_id": "PMC4465499:body:16199",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4465499:body:16199#paraphrased",
+      "paragraph_id": "PMC4465499:body:16199",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.4737,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC11208215:body:10142#lexical",
+      "paragraph_id": "PMC11208215:body:10142",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7778,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11208215:body:10142#paraphrased",
+      "paragraph_id": "PMC11208215:body:10142",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.4737,
+      "rank_of_gold": 34
+    },
+    {
+      "query_id": "PMC10620132:body:4909#lexical",
+      "paragraph_id": "PMC10620132:body:4909",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10620132:body:4909#paraphrased",
+      "paragraph_id": "PMC10620132:body:4909",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC13454354:body:28958#lexical",
+      "paragraph_id": "PMC13454354:body:28958",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7333,
+      "rank_of_gold": 39
+    },
+    {
+      "query_id": "PMC13454354:body:28958#paraphrased",
+      "paragraph_id": "PMC13454354:body:28958",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5882,
+      "rank_of_gold": null
+    },
+    {
+      "query_id": "PMC9249987:body:2559#lexical",
+      "paragraph_id": "PMC9249987:body:2559",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9249987:body:2559#paraphrased",
+      "paragraph_id": "PMC9249987:body:2559",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5625,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8086250:body:5601#lexical",
+      "paragraph_id": "PMC8086250:body:5601",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8086250:body:5601#paraphrased",
+      "paragraph_id": "PMC8086250:body:5601",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5333,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10945882:body:1161#lexical",
+      "paragraph_id": "PMC10945882:body:1161",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7143,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10945882:body:1161#paraphrased",
+      "paragraph_id": "PMC10945882:body:1161",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 20
+    },
+    {
+      "query_id": "PMC8730771:body:4665#lexical",
+      "paragraph_id": "PMC8730771:body:4665",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8730771:body:4665#paraphrased",
+      "paragraph_id": "PMC8730771:body:4665",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC8406897:body:7191#lexical",
+      "paragraph_id": "PMC8406897:body:7191",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8235,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8406897:body:7191#paraphrased",
+      "paragraph_id": "PMC8406897:body:7191",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5556,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12834284:body:3974#lexical",
+      "paragraph_id": "PMC12834284:body:3974",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.6,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC12834284:body:3974#paraphrased",
+      "paragraph_id": "PMC12834284:body:3974",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.7368,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11731115:body:3057#lexical",
+      "paragraph_id": "PMC11731115:body:3057",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8947,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC11731115:body:3057#paraphrased",
+      "paragraph_id": "PMC11731115:body:3057",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.7368,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8077123:body:5511#lexical",
+      "paragraph_id": "PMC8077123:body:5511",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7647,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC8077123:body:5511#paraphrased",
+      "paragraph_id": "PMC8077123:body:5511",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6471,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4627365:body:2693#lexical",
+      "paragraph_id": "PMC4627365:body:2693",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8571,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4627365:body:2693#paraphrased",
+      "paragraph_id": "PMC4627365:body:2693",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5333,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC2994899:body:5327#lexical",
+      "paragraph_id": "PMC2994899:body:5327",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8462,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC2994899:body:5327#paraphrased",
+      "paragraph_id": "PMC2994899:body:5327",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6667,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10024563:body:4504#lexical",
+      "paragraph_id": "PMC10024563:body:4504",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC10024563:body:4504#paraphrased",
+      "paragraph_id": "PMC10024563:body:4504",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6923,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC12854217:body:3140#lexical",
+      "paragraph_id": "PMC12854217:body:3140",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7857,
+      "rank_of_gold": 20
+    },
+    {
+      "query_id": "PMC12854217:body:3140#paraphrased",
+      "paragraph_id": "PMC12854217:body:3140",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.7692,
+      "rank_of_gold": 30
+    },
+    {
+      "query_id": "PMC11954897:body:3705#lexical",
+      "paragraph_id": "PMC11954897:body:3705",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 7
+    },
+    {
+      "query_id": "PMC11954897:body:3705#paraphrased",
+      "paragraph_id": "PMC11954897:body:3705",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.6522,
+      "rank_of_gold": 27
+    },
+    {
+      "query_id": "PMC4932666:body:2687#lexical",
+      "paragraph_id": "PMC4932666:body:2687",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.8571,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC4932666:body:2687#paraphrased",
+      "paragraph_id": "PMC4932666:body:2687",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.7826,
+      "rank_of_gold": 2
+    },
+    {
+      "query_id": "PMC5802063:body:6147#lexical",
+      "paragraph_id": "PMC5802063:body:6147",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7059,
+      "rank_of_gold": 4
+    },
+    {
+      "query_id": "PMC5802063:body:6147#paraphrased",
+      "paragraph_id": "PMC5802063:body:6147",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5882,
+      "rank_of_gold": 8
+    },
+    {
+      "query_id": "PMC4396398:body:3930#lexical",
+      "paragraph_id": "PMC4396398:body:3930",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.7368,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC4396398:body:3930#paraphrased",
+      "paragraph_id": "PMC4396398:body:3930",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.65,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9338933:body:8867#lexical",
+      "paragraph_id": "PMC9338933:body:8867",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.65,
+      "rank_of_gold": 1
+    },
+    {
+      "query_id": "PMC9338933:body:8867#paraphrased",
+      "paragraph_id": "PMC9338933:body:8867",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.4737,
+      "rank_of_gold": 19
+    },
+    {
+      "query_id": "PMC9543999:body:2808#lexical",
+      "paragraph_id": "PMC9543999:body:2808",
+      "style": "lexical",
+      "stratum": "methods",
+      "lexical_overlap": 0.75,
+      "rank_of_gold": 3
+    },
+    {
+      "query_id": "PMC9543999:body:2808#paraphrased",
+      "paragraph_id": "PMC9543999:body:2808",
+      "style": "paraphrased",
+      "stratum": "methods",
+      "lexical_overlap": 0.5294,
+      "rank_of_gold": 3
+    }
+  ]
+}

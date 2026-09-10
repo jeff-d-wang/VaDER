@@ -1,69 +1,65 @@
 # VaDER
 
-**Variant-Disease Evidence Retriever**
+Variant-Disease Evidence Retriever: cancer-genomics literature retrieval with exact source-span
+citations. The current service returns BM25-ranked evidence from a named PMC OA snapshot.
+Opt-in synthesis is available through `/answer`; the researcher-facing viewer remains planned.
 
-A biomedical literature RAG and agent system, scoped to cancer genomics: given a gene or variant, retrieve what the literature reports about its role in a disease, with citations to the exact supporting passage.
+This project studies whether an AI system can provide useful, inspectable evidence under measured
+quality, latency and cost constraints. [Current status](docs/CURRENT_STATUS.md),
+[active plan](docs/PROJECT_PLAN.md), [task contract](docs/TASK_CONTRACT.md), and
+[architecture](docs/ARCHITECTURE.md) describe what exists and what remains.
 
-This is a hands-on production AI-engineering project meant for me to not only build the system,
-but to understand the practice around it too: evaluation methodology, error analysis, guardrails, observability, latency and cost engineering, caching, and deployment. Every number this project reports comes with a confidence interval, a sample size, and the reproducable code and config.
+## Run locally
 
-## Status
+Use Python 3.13 in the `vader_env` conda environment:
 
-**Step 0 done. Tier 1 in progress (M1 mostly built, phase A of the v4 execution order next).**
+```sh
+conda env create -f environment.yml
+conda activate vader_env
+# If the environment already exists:
+python -m pip install -r requirements.txt
+python -m unittest discover
+uvicorn service.app:app --host 127.0.0.1 --port 8000
+```
 
-Task contract: variant-disease evidence retrieval, scoped to cancer genomics
-(`docs/TASK_CONTRACT.md`). Corpus: 7,863 PMC Open Access full-text articles, snapshot 2026-08-30.
-A FastAPI service is up and measured (`service/`), still wrapping a deliberately trivial stub
-handler. The eval harness exists and has produced real numbers: a four-property scorer with an LLM
-judge, a hand-built BM25 over 437k paragraphs, two baselines run and compared with a paired
-McNemar test, and an enforced dev/held-out split (`docs/RESULTS.md`).
+Tests build synthetic XML fixtures and mock provider calls. They need no API keys, downloaded
+corpus or network access after dependencies are installed. The service needs the local XML corpus;
+without it `/healthz` returns 503. See [ingestion](ingestion/README.md) for downloading data. A
+latest-version pull is not a byte-exact restore of the recorded snapshot. Preserve current XML.
 
-**The headline number, and the story behind it, is the honest advertisement for this project.**
-Retrieval buys real groundedness: 0% to 75%, +75 points paired, McNemar p=0.031 at n=8. Whether it
-helps the model report the *direction* of an association correctly is, at this sample size,
-unknown: +12 points, p=1.000.
+```sh
+curl -N http://127.0.0.1:8000/query -H 'Content-Type: application/json' \
+  -d '{"query":"BRCA1 variant breast cancer"}'
+python -m retrieval.build_index --out eval/runs/index-new.pkl
+python -m eval.score_retrieval --cases eval/data/releases/retrieval-reviewed-20260909.jsonl \
+  --index eval/runs/index-new.pkl --out eval/runs/retrieval-new.json
+```
 
-That second sentence used to read "buys nothing at all, 12.5% either way, zero cases flipped."
-Then a human validation pass over 8 of the 19 eval cases found **4 of them defective**, including
-one where the tool meant to verify gold spans had itself repointed a span onto a paragraph about a
-different variant. After repairing the set, three cases flip where none had before, and the
-confident negative result evaporated. Repairing the gold labels also roughly doubled both
-baselines' measured direction scores, because two cases had been marking correct answers wrong.
+The reviewed subset is a diagnostic sample, not a representative performance claim. Rejected
+cases cannot be scored. Use `--exploratory` explicitly for unreviewed datasets; those outputs are
+not release evidence. Baseline model calls require `GROQ_API_KEY` and consume provider quota.
+Read the plan's experiment rules before running measured comparisons.
 
-The most interesting result in the repo was the one that did not survive contact with a validated
-eval set. That is written up rather than quietly corrected: see `docs/DECISION_LOG.md`'s phase A1
-entries and the standing caveat in `docs/RESULTS.md`. `docs/START_HERE.md` has current status.
-
-## Why this exists
-
-I want to do a production-esque AI engineering project that covers issues outside of just implementing RAG and a vector database: catching failures before users do, knowing whether an output is right, tracing a bad answer to its root cause, keeping latency and cost under control, and making deliberate tradeoffs instead of copying a tutorial's defaults.
+To enable synthesis locally, set `VADER_GENERATION_ENABLED=1` and `GROQ_API_KEY` before
+starting the service, then POST the same query JSON to `/answer`. This returns one validated
+JSON response with claims and evidence. It consumes provider quota. See [serving limits and
+error codes](service/README.md#runtime-synthesis). No live synthesis quality has been validated.
 
 ## Layout
 
-```
-common/       Corpus access: JATS XML to text, sections, and the char-offset
-              convention that gold spans and citations are both expressed in
-retrieval/    Retrieval and the metrics that score it (hand-built BM25, recall@k,
-              nDCG, MRR). Depends on common; does not know eval exists
-eval/         The evaluation harness: eval set, scorer, judge, baselines,
-              gold-label validation tooling. Depends on retrieval and common
-ingestion/    Corpus pull: PMC Open Access full text via E-utilities and S3
-service/      FastAPI measurement surface: the real HTTP path every latency
-              number is measured against (still a stub handler)
-docs/         Decisions and results
-corpus/       The Step 0b snapshot: manifest and per-file hashes (XML git-ignored)
-```
+| Path | Role |
+|---|---|
+| `common/` | Source text/provenance, tracing and run artifacts |
+| `retrieval/` | Chunking, BM25, index build and IR metrics |
+| `service/` | HTTP retrieval, bounded synthesis and retrieval load testing |
+| `eval/` | Baselines, judges, cases, validation and offline candidate-building CLIs |
+| `eval/artifacts/` | Preserved run outputs and completed human review evidence |
+| `ingestion/`, `corpus/` | Download pipeline, source manifest and local XML |
+| `docs/` | Current public plan/status, decisions and historical results |
 
-Everything runs as a module from the repo root, so there are no `sys.path` shims and no
-dependence on which directory you happen to be in:
+[RESULTS.md](docs/RESULTS.md) preserves historical measurements and their caveats; it is not a
+claim that current code reproduces every old number. Historical runs include defective-label,
+stale-index and attribution problems. New run bundles preserve the actual outputs and input
+fingerprints. No headline quality lift is advertised until the accepted baseline is rerun.
 
-```
-python -m unittest discover                            # every test, 203 of them
-python -m eval.score --answers runs/x.jsonl --judge groq
-python -m eval.benchmarks.run_benchmark --dataset scifact
-uvicorn service.app:app --port 8000
-```
-
-The dependency direction is deliberate and one-way: `common` <- `retrieval` <- `eval`. Evaluation
-measures retrieval; retrieval does not know evaluation exists. That matters once `service/` starts
-importing the retriever to answer real requests, which is the point of phase E.
+The current service is for local research. It is not ready for unauthenticated public deployment.

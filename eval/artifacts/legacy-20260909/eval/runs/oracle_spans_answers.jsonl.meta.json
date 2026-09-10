@@ -1,0 +1,8 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "prompt_version": "oracle_spans_v2",
+  "git_sha": "4ffbfd9",
+  "context": "gold_spans_only",
+  "n_cases": 11,
+  "generated_at_utc": "2026-09-05T05:54:14.426705+00:00"
+}

@@ -1,3 +1,21 @@
+# Current evaluation commands and release policy
+
+The active plan is `docs/PROJECT_PLAN.md`; current blockers are `docs/CURRENT_STATUS.md`.
+Historical instructions below may describe earlier experiments. Use these release rules:
+
+- Select retrieval cases explicitly with `--cases`. A reviewed diagnostic subset is in
+  `eval/data/releases/retrieval-reviewed-20260909.jsonl`, with a checksummed manifest.
+- Rejected cases cannot be scored. Unreviewed cases require `--exploratory`.
+- Answer release scoring rejects missing answers. Exploratory output records its incomplete set.
+- Invalid citations remain unsupported claims in the denominator. This changes scorer behavior;
+  historical scores must not be relabeled as results from this scorer.
+- `common.run_meta.append_run` copies outputs to unique `eval/artifacts/` folders. Preserve those
+  and completed human worksheets. The historical snapshot is `eval/artifacts/legacy-20260909/`.
+- Build caches with `python -m retrieval.build_index --out eval/runs/index-new.pkl`.
+- These changes do not calibrate the judge, supply representative labels or fix clustered CIs.
+
+---
+
 # eval/
 
 The evaluation harness: the eval set, the scorer and its judge, the baselines, and the tooling
@@ -632,43 +650,65 @@ filled in.
 against. A replacement draft is in progress at `eval/runs/retrieval_cases_v3.jsonl` and is **not**
 promoted yet.
 
-**State as of 2026-09-08.** `GROQ_API_KEY` in `.env` (auto-loaded by `eval/llm_client.py`, no
-`export` needed) unblocked generation. A no-`--limit` run with `retrieval_qgen_v3` produced 112
-paragraphs (abstract 40, intro 45, methods 23; still nothing for results/discussion/body_other)
-before hitting the daily free-tier token cap. Worksheeted at n=20, read by a person: **30% wrong
-(6/20), 95% CI [15%, 52%]**, better than v1 but not zero. Taxonomy in `docs/DECISION_LOG.md`, "v3's
-real defect rate, measured": mostly a query naming its subject as "the study" / "the authors"
-instead of a real anchor. One prompt rule added against that
-(`retrieval_qgen_v4`, **unvalidated**). The 6 confirmed-wrong paragraphs are dropped from the
-draft; the 14 confirmed-valid ones carry `validated_by` / `validation_verdict`. 108 paragraphs
-remain in the draft, 14 reviewed.
+**State as of 2026-09-08.** Two worksheet reviews of `retrieval_qgen_v3` output (n=20, then n=50,
+mostly independent samples) put the defect rate at a stable **~30%** (6/20, then 15/47ish). Reading
+the actual wrong cases, not just the one-line reasons, found two distinct patterns and one prompt
+fix each so far:
 
-Next: a small v4 batch (`--limit 24`, so it can't eat a whole day's budget) once the token cap
-resets, worksheeted the same way. If v4's defect rate is meaningfully better, finish the build
-(fills the three empty strata too) and promote the draft over `data/retrieval_cases.jsonl`,
-re-running every baseline that scores against it. If not, iterate the prompt again rather than
-grind through review at a ~30% rate.
+1. **Deictic subject** ("the study" / "the authors" instead of a real anchor). Fixed in
+   `retrieval_qgen_v4` (one prompt rule). **Still unvalidated**: of the 111 paragraphs in
+   `eval/runs/retrieval_cases_v3.jsonl`, only 3 are actually v4-stamped, so no batch has fairly
+   tested it yet.
+2. **Genericness** (9-10 of 15 in the second review, the dominant pattern): the anchors are real
+   and verbatim, but name a recurring category ("NOS score", "Addgene... p53 plasmids") many
+   similarly-shaped paragraphs share, rather than the paragraph's paper-unique details. Confirmed
+   this is not a `--df-table` gap: these queries pass `MAX_RAREST_TERM_DF` comfortably (df 51-420).
+   Fixed in `retrieval_qgen_v5`: `specificity_margin`, a mechanical check that searches a
+   paragraph-granular BM25 index and rejects a query whose gold paragraph doesn't decisively
+   outrank the best-scoring paragraph from a different article. Calibrated against both worksheets
+   before being wired in (`--calibrate-specificity`, no API calls): checked on both query styles it
+   was net-harmful (rejected half of known-valid rows, because the deliberately de-lexicalized
+   paraphrase style scores lower by construction); checked on the **lexical query only**, it
+   rejects 61% of known-wrong rows at a cost of 22% of known-valid ones. Full calibration story in
+   `docs/DECISION_LOG.md`, "specificity_margin, a BM25-margin check for the genericness defect".
 
-Two things are prepared so this does not need re-deriving:
+Two smaller patterns from the same review (paraphrase-quality failures, 3/15; a gap-statement
+tautology sub-shape, 1/15) are logged, not yet fixed, deliberately: bundling more prompt changes
+into this version would muddy attribution in the batch below, which exists to test v4 and v5's
+margin check together as one clean unit.
+
+**Next, once budget allows:** a fresh batch under v5, to its own file so a worksheet sample of it
+is 100% v5-generated, not diluted into the mixed v3/v4 draft the way the last one was:
+
+```
+python -m eval.build_retrieval_set --limit 30 --out eval/runs/retrieval_cases_v5.jsonl \
+    --df-table eval/runs/doc_freq_paragraph.json --para-index eval/runs/bm25_index_paragraph.pkl
+python -m eval.build_retrieval_set --worksheet 20 --out eval/runs/retrieval_cases_v5.jsonl \
+    --out-worksheet eval/retrieval_worksheet_v5.md
+python -m eval.make_case_worksheet --summarize eval/retrieval_worksheet_v5.md
+```
+
+Expect a lower acceptance rate than v3/v4's 74%: the margin check is designed to reject more.
+**Log a prediction and its minimum detectable effect in `docs/DECISION_LOG.md` before running the
+first command**, per the standing rule; the pooled ~31% baseline (n=67 reviewed paragraphs across
+both prior worksheets) is what a new rate should be compared against, and at n=20-30 the CI is wide
+enough that only a large effect is distinguishable from noise.
+
+Two artifacts are prepared so none of this needs re-deriving:
 
 - **`eval/runs/doc_freq_paragraph.json`** (11 MB, git-ignored): the `term -> document frequency`
-  table over the 344,900-paragraph corpus, for `build_retrieval_set.py --df-table`. The
-  `MAX_RAREST_TERM_DF = 1000` threshold is calibrated against that 344,900 denominator (0.3% of
-  the corpus), so the df table must be paragraph-granular, not built from the phase D chunk index.
-  Rebuild it from `eval/runs/bm25_index_paragraph.pkl` (itself rebuilt via
-  `build_index(..., chunker=paragraph_chunks)`) if it is missing.
+  table over the 344,900-paragraph corpus, for `--df-table`. The `MAX_RAREST_TERM_DF = 1000`
+  threshold is calibrated against that 344,900 denominator (0.3% of the corpus), so the df table
+  must be paragraph-granular, not built from the phase D chunk index.
+- **`eval/runs/bm25_index_paragraph.pkl`** (529 MB, git-ignored): the paragraph-granular BM25
+  index `--para-index` searches for `specificity_margin`. Rebuild both via
+  `retrieval.bm25.build_index(xml_dir, pmcids, chunker=retrieval.chunker.paragraph_chunks)` if
+  missing; same one-liner pattern as the chunk-granular `bm25_index.pkl` rebuild instructions
+  above, with `chunker=paragraph_chunks` added.
 - **The phase D chunk vs paragraph re-score** of the current 138 is in `docs/RESULTS.md`
   ("Phase D re-score"): merging costs about 1.4pp recall@10 (not significant) and 3 to 4pp on
   recall@1 / MRR. Score the finished set on both indexes the same way; that is the M6 chunking
   ablation's first row.
-
-```
-python -m eval.build_retrieval_set --limit 24 --out eval/runs/retrieval_cases_v3.jsonl --df-table eval/runs/doc_freq_paragraph.json
-python -m eval.build_retrieval_set --worksheet 20 --out eval/runs/retrieval_cases_v3.jsonl --out-worksheet eval/retrieval_worksheet_v4.md
-python -m eval.make_case_worksheet --summarize eval/retrieval_worksheet_v4.md
-python -m eval.verify_retrieval_set --cases eval/runs/retrieval_cases_v3.jsonl
-python -m eval.score_retrieval --index eval/runs/bm25_index.pkl --cases eval/runs/retrieval_cases_v3.jsonl --out eval/runs/retrieval_bm25_v3.json --measure-holes 40
-```
 
 **`verify_retrieval_set.py` no longer checks that a query echoes its anchors verbatim.** That was
 v1/v2's design; v3 dropped it deliberately (anchors are metadata, not a constraint on the query

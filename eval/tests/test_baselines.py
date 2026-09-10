@@ -46,15 +46,16 @@ class TestMapClaims(unittest.TestCase):
             "cited_char_start": 0, "cited_char_end": 25,
         }])
 
-    def test_drops_a_citation_to_an_excerpt_that_does_not_exist(self):
-        for bad in (0, 3, -1, None, "1", 1.0):
-            self.assertEqual(map_claims([{"text": "x", "excerpt_index": bad}], EXCERPTS), [],
-                             f"excerpt_index {bad!r} should be dropped, never guessed at")
+    def test_preserves_a_claim_with_an_invalid_citation(self):
+        for bad in (0, 3, -1, None, "1", 1.0, True):
+            claim = map_claims([{"text": "x", "excerpt_index": bad}], EXCERPTS)[0]
+            self.assertEqual(claim["text"], "x")
+            self.assertEqual(claim["cited_pmcid"], "")
 
     def test_keeps_the_good_claims_when_one_is_bad(self):
         claims = map_claims(
             [{"text": "ok", "excerpt_index": 1}, {"text": "bad", "excerpt_index": 99}], EXCERPTS)
-        self.assertEqual([c["text"] for c in claims], ["ok"])
+        self.assertEqual([c["text"] for c in claims], ["ok", "bad"])
 
     def test_no_claims_at_all_is_an_empty_list_not_a_crash(self):
         self.assertEqual(map_claims(None, EXCERPTS), [])

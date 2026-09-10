@@ -98,7 +98,12 @@ def search(query: str, articles: list[ArticleMeta], stats: SearchStats, *,
 
     t0 = time.monotonic()
     with span("retrieve", retriever="bm25", top_k=max_scan) as s:
-        hits = index.search(query, top_k=max_scan)
+        try:
+            hits = index.search(query, top_k=max_scan, deadline=t0 + deadline_s)
+        except TimeoutError:
+            stats.stopped_reason = "deadline"
+            s["error.type"] = "TimeoutError"
+            return
         s["retrieval.hit_count"] = len(hits)
     stats.candidates_matched_by_title = len(hits)
     stats.candidates_scanned = len(hits)
@@ -113,6 +118,6 @@ def search(query: str, articles: list[ArticleMeta], stats: SearchStats, *,
         yield MatchSpan(
             pmcid=chunk.pmcid, title=title_by_pmcid.get(chunk.pmcid, chunk.pmcid),
             section=gold_span["section"], char_start=gold_span["char_start"],
-            char_end=gold_span["char_end"], text=chunk.text[:500],
+            char_end=gold_span["char_end"], text=chunk.text,
         )
     stats.stopped_reason = "max_matches" if len(hits) > max_matches else "exhausted"

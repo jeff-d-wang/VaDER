@@ -9,7 +9,7 @@ import os
 import tempfile
 from pathlib import Path
 
-import eval.llm_client as llm_client
+import common.llm_client as llm_client
 
 def _reset(monkeypatch_path: Path | None) -> None:
     llm_client._dotenv_loaded = False

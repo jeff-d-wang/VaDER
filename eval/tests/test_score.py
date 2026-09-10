@@ -197,7 +197,7 @@ class TestScore(unittest.TestCase):
 
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = score.main(["--answers", str(answers_path), "--judge", "fake",
+                rc = score.main(["--answers", str(answers_path), "--judge", "fake", "--exploratory",
                                   "--cases", str(cases_path), "--xml-dir", str(xml_dir)])
             self.assertEqual(rc, 0, "exit code 0 on default (exclude) run")
             self.assertTrue("Scored 1/1 cases" in buf.getvalue(), "%s -- %s" % ("only the dev case (ev1) was scored, held-out case excluded", buf.getvalue()))
@@ -205,7 +205,7 @@ class TestScore(unittest.TestCase):
 
             buf2 = io.StringIO()
             with contextlib.redirect_stdout(buf2):
-                rc2 = score.main(["--answers", str(answers_path), "--judge", "fake",
+                rc2 = score.main(["--answers", str(answers_path), "--judge", "fake", "--exploratory",
                                    "--cases", str(cases_path), "--xml-dir", str(xml_dir),
                                    "--held-out", "only", "--touch-reason", "unit test"])
             self.assertEqual(rc2, 0, "exit code 0 on --held-out only run")
